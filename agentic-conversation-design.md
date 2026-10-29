@@ -1,4 +1,4 @@
-# Agent-to-agent review channel: design record
+# Agent-to-agent conversation channel: design record
 
 | Field | Value |
 |---|---|
@@ -13,13 +13,15 @@ This record keeps everything the exploration produced: the problem, the context 
 
 ## 1. The problem
 
+Two people's coding agents cannot talk to each other. When one person's agent has something for another person's agent, a person carries the message between them: a review finding, a question about a ticket, the result of a deploy check, a point in a design discussion. This record designs a channel that carries typed messages between two people's agents directly. Code review is the first conversation kind. The narrative below uses it as the concrete case.
+
 Developers at the company now do most of their work together with a Claude Code session on their laptop. When one developer reviews another developer's merge request, the reviewer's session reads the change and writes the findings. The reviewer then hands those findings to the author. The author pastes them into their own session, which fixes what it can and asks the author about the rest.
 
 The two sessions never talk to each other. A person carries the messages between them, and that person adds nothing on the way. The review artifact itself is written by a model for a model, so the human in the middle rarely reads it. A sample of the current artifact shape is the untracked `review-points.md` in this repository: YAML front matter, Fixed and Ignored sections, reviewer subagents named, anchors to commits.
 
 We want the review to flow from the reviewer's session to the author's session on its own, and the people to step in only when a decision is really theirs: a product choice, a change of scope, an approval.
 
-Review is the first case because it is concrete and complete. The same path can later carry ticket-readiness questions, deploy-verification results, and the standalone harness application's traffic.
+Review is the first case because it is concrete and complete. The same path can later carry ticket-readiness questions, deploy-verification results, and a standalone agent application's traffic.
 
 ---
 
@@ -33,11 +35,11 @@ Review is the first case because it is concrete and complete. The same path can 
 - The gateway proof of concept is deployed in the dev cluster since 5 October 2026. Testing is tracked separately. So far only virtual API keys and team budgets for model traffic have been tested (in review). DNS and reachability are next. An internal ingress is planned by 30 November 2026, and sign-in with the corporate identity is explicitly step two and not yet in place.
 - Developers run Claude Code on personal subscriptions. The organization uses an OIDC identity provider (DEX in the local stand-in). The internal knowledge base plugin already proves that a local MCP client can log in to DEX (static client, fixed callback port, no dynamic registration).
 
-**Harness controls that already exist.**
+**Controls that already exist.**
 
-- The harness guard blocks pipe-to-shell, destructive deletes outside the working directory, force push to protected branches, and reads of secret files.
-- The central guard policy file is the Security-owned policy, changed only through a CODEOWNERS-gated merge request, propagated by plugin release.
-- Org-managed settings carry a hard floor of denied permissions that a developer cannot override.
+- An organization's own guard hook can block pipe-to-shell, destructive deletes outside the working directory, force push to protected branches, and reads of secret files.
+- An organization can keep that guard's policy in one central file owned by its security function, changed only through an owner-approved merge request, propagated by plugin release.
+- An organization can carry a managed floor of denied permissions that a developer cannot override.
 - The CI review lane set the precedent for untrusted merge request content: read-only tools, no shell, a minimal-scope token, hooks from the repository checkout ignored.
 - The secret-injection hook already skips the tags Claude Code sends by itself, including `<cross-session-message`. A channel message arrives as `<channel source=...>` and will need the same treatment.
 
@@ -122,7 +124,7 @@ Claude Code spawns one channel server process per session. That verified fact de
 
 ```
 Reviewer A ──sends findings from their session──▶ ┌──────────────────────────────┐ ◀──delivers into B's session──▶ Author B
-                                                  │ Agent review channel         │     B's agent replies, disputes
+                                                  │ Agent conversation channel   │     B's agent replies, disputes
                                                   │ gateway · inbox · plugins    │
                                                   └──────┬───────────┬───────────┘
                                            verifies who  │           │ outcome and escalations
@@ -157,13 +159,13 @@ A's laptop                     platform (dev cluster)                           
 | Component | Role | Exists |
 |---|---|---|
 | Agent Gateway (agentgateway) | The door. Validates DEX JWTs, calls the authorization rule, logs every request with sender, route and A2A method, exports over OTLP. Can also front the inbox as an OAuth-protected MCP server for the pull path | Yes, proof of concept on dev |
-| Inbox service | A2A-shaped task store per person: tasks, messages, states, routing table of live sessions, one event stream per connected plugin, round caps, canonical cleaned record of each message | No. Small. The first slice of the standalone harness application |
+| Inbox service | A2A-shaped task store per person: tasks, messages, states, routing table of live sessions, one event stream per connected plugin, round caps, canonical cleaned record of each message | No. Small. The first slice of a standalone agent application |
 | Inbox store | Where messages wait while a laptop is closed | No |
-| Inbox channel plugin | A local stdio MCP server shipped through the plugin marketplace. Logs in to DEX once, registers the session's context, subscribes to its stream, emits channel events, exposes reply, list and acknowledge tools. Runs the validator at both ends | No |
-| Hooks in the harness | `SessionStart` pulls pending items for the repository in `cwd` and injects them as context. `CwdChanged` refreshes the registration. `SessionEnd` deregisters. The secret-injection hook skips `<channel` | Partly (hook framework exists) |
+| Inbox channel plugin | A local stdio MCP server shipped through a plugin marketplace. Logs in to DEX once, registers the session's context, subscribes to its stream, emits channel events, exposes reply, list and acknowledge tools. Runs the validator at both ends | No |
+| Hooks shipped with the plugin | `SessionStart` pulls pending items for the repository in `cwd` and injects them as context. `CwdChanged` refreshes the registration. `SessionEnd` deregisters. The secret-injection hook skips `<channel` | Partly (hook framework exists) |
 | Skills | `review-send` on the reviewer side packages findings as one A2A task per finding, addressed to the merge request. `review-handle` on the author side fixes what is clear, disputes with reasons, asks its human only on input-required, and posts the outcome summary to the merge request | No |
 | CI review lane | A second sender into the same inbox under a service identity, from Bedrock. It cannot receive channels on Bedrock and does not need to | Planned |
-| Deterministic promoter | The only exit for code from the quarantine: pushes the commit to the merge request branch under a branch-scoped token after fixed checks. Part of the harness CLI | No |
+| Deterministic promoter | The only exit for code from the quarantine: pushes the commit to the merge request branch under a branch-scoped token after fixed checks. Part of a future CLI | No |
 
 ### 6.4 Message flow
 
@@ -177,6 +179,40 @@ A's laptop                     platform (dev cluster)                           
 6. B's session runs `review-handle` inside the quarantine: fixes what is clear, disputes with reasons, replies through the inbox tool. Replies travel the same path in reverse with the same checks.
 7. On input-required, B's session asks B, in the shape problem first, decision needed, suggestion separate. B answers in the terminal or through permission relay.
 8. The promoter pushes the resulting commit to the merge request branch after fixed checks. The outcome summary and any open decisions are written to the merge request thread. Approval and merge stay with a person.
+
+### 6.5 Conversation kinds
+
+The design has two layers.
+
+The transport layer is use-case neutral. It is the gateway, the inbox, the channel plugin, the hooks, the quarantine, the promoter, the round cap and the audit. It moves a typed message from one person's agent to another person's agent, checks who sent it, stores it, delivers it and logs it.
+
+A conversation kind sits on top of the transport. A conversation kind is five things:
+
+- A payload schema pair: one schema for the request and one for the reply.
+- A context id shape: what the conversation is about, and how the inbox finds the participants.
+- A sender rule: who may open a conversation of this kind.
+- An authority policy: what the receiving agent may do on its own.
+- A skill pair: one skill for the sending side and one for the receiving side.
+
+Review is the first kind:
+
+| Part | Review |
+|---|---|
+| Payload schemas | `finding.v1` (request), `reply.v1` (reply), `note.v1` (outcome on the merge request) |
+| Context id | `<repo>!<iid>`, the merge request |
+| Sender rule | Reviewers and assignees of the merge request open a task; the finding's sender and the merge request author reply |
+| Authority policy | Ceiling per finding class (`fact`, `taste`, `product`) in `.aic/policy.json` |
+| Skills | `review-send` (reviewer), `review-handle` (author) |
+
+Candidate next kinds. None of them is built.
+
+| Kind | Likely context id | Likely sender rule | Likely skills |
+|---|---|---|---|
+| Ticket readiness | `<project>#<ticket key>` | The ticket's reporter, assignee or refinement participants | `ticket-ask`, `ticket-answer` |
+| Deploy verification | `<service>@<environment>#<deploy id>` | The person who ran the deploy and the service owners | `deploy-report`, `deploy-handle` |
+| Design question | `<repo>/<design doc path>` or a discussion id | The document's author and named reviewers | `design-ask`, `design-answer` |
+
+The review kind is wired into the inbox, the plugin and the promoter today. `DECISIONS.md` row P20 lists each place that a second kind must change.
 
 ---
 
@@ -208,7 +244,7 @@ Two risks decide feasibility. They are two sides of one dial: the more B's agent
 
 **Why it cannot be engineered away.** A model cannot reliably tell instructions from data inside content it is asked to act on. Trust is transitive: whatever steered A's agent (an outside merge request description, a poisoned dependency, a bad skill) now steers B's agent one hop later, carrying a trusted colleague's identity. Today that chain is broken by a human reading the review. The concept removes that human on purpose.
 
-**What makes it worse.** B's session holds B's credentials and may run in a permissive mode. The message arrives while B is away. Inbound text can imitate the harness's own system messages.
+**What makes it worse.** B's session holds B's credentials and may run in a permissive mode. The message arrives while B is away. Inbound text can imitate Claude Code's own system messages.
 
 **What the standards say.** No framework claims prevention. OWASP (LLM Top 10 2025, Agentic Top 10 2026), NIST AI 100-2, MITRE ATLAS 2026.09, CSA, Google, Microsoft and Meta all accept residual risk only when deterministic controls outside the model cap what a hijacked agent can do. Five controls appear in every framework:
 
@@ -231,31 +267,31 @@ Meta's Rule of Two states the design constraint: a session may have at most two 
 | Layer | Control | What it stops | Precedent | Where it lives |
 |---|---|---|---|---|
 | 1 · Identity and authority at the door | Sender verified against DEX and must be a reviewer or assignee of that merge request. Messages signed, replays rejected. The receiving session keeps its own permission rules; an inbound message can never approve a prompt or change configuration | Impersonation, outsiders, forged agent messages | GitHub write-access gate; Claude Code cross-session rule; OWASP ASI07 | Gateway and inbox |
-| 2 · Content as data | Typed schema: finding id, file and line that must exist in the diff, category and severity from closed lists, free text length-capped. Hidden Unicode and HTML stripped, no images or links rendered. Arrives inside the channel frame; the harness's own hooks ignore it. Repository instructions and hooks come from the protected base branch, never from the merge request branch | Off-scope targeting, hidden payloads, poisoning the agent's configuration through the merge request | GitHub and Claude Action stripping; Bugbot's base-branch rule; the CI review lane ignores repository hooks | Plugin and inbox validator |
-| 3 · Quarantine | Isolated worktree at the merge request head. No secrets in environment or home. Network off except the gateway and GitLab through the plugin. Edits allowed only in files the merge request touches. Writes to CI configuration, hooks, Claude configuration, dependency manifests and lockfiles denied by a deterministic hook. No pipe-to-shell, secret reads or force push (the harness guard) | Exfiltration, persistence, supply-chain edits. The deny list must name these file classes, because generic sandboxes blocked none of them in the benchmark | Rule of Two; GitHub single branch and firewall; Claude Code sandbox and deny rules | Harness: the harness guard plus the managed deny floor |
-| 4 · A program does the risky steps (deterministic promotion) | The only exits. A promoter pushes to the merge request branch under a branch-scoped, short-lived token after checks: diff only in allowed files, size cap, CI green. Replies leave through the inbox tool after schema check and round cap. Resolving threads rides on the promoter. Approve and merge never | Irreversible or external effects driven by the message | GitHub push-only single branch; plan-then-execute pattern | the harness CLI and the inbox |
-| 5 · Human gates by how reversible the action is | Worktree edits: none. Push to the merge request branch: the promoter, or B at the lowest ladder level. Approve and merge: always a person. Every escalation names who sent what | Consent fatigue, the most bypassed control in Microsoft's red teaming | Microsoft taxonomy v2; OWASP LLM01 | Harness and GitLab |
-| 6 · Detection and audit | Injection classifier on inbound findings at the gateway, for noise. Every message and promotion logged with its sender. Off-policy attempts logged as security events. A canary suite in CI | Lowers how often an attempt gets through; produces evidence | Anthropic 8% to 1.4%; GitLab log-only scan; ATLAS telemetry | Gateway and harness |
+| 2 · Content as data | Typed schema: finding id, file and line that must exist in the diff, category and severity from closed lists, free text length-capped. Hidden Unicode and HTML stripped, no images or links rendered. Arrives inside the channel frame; hooks shipped with the plugin ignore it. Repository instructions and hooks come from the protected base branch, never from the merge request branch | Off-scope targeting, hidden payloads, poisoning the agent's configuration through the merge request | GitHub and Claude Action stripping; Bugbot's base-branch rule; the CI review lane ignores repository hooks | Plugin and inbox validator |
+| 3 · Quarantine | Isolated worktree at the merge request head. No secrets in environment or home. Network off except the gateway and GitLab through the plugin. Edits allowed only in files the merge request touches. Writes to CI configuration, hooks, Claude configuration, dependency manifests and lockfiles denied by a deterministic hook. No pipe-to-shell, secret reads or force push (the quarantine guard hook) | Exfiltration, persistence, supply-chain edits. The deny list must name these file classes, because generic sandboxes blocked none of them in the benchmark | Rule of Two; GitHub single branch and firewall; Claude Code sandbox and deny rules | Quarantine: the quarantine guard hook plus the managed deny floor |
+| 4 · A program does the risky steps (deterministic promotion) | The only exits. A promoter pushes to the merge request branch under a branch-scoped, short-lived token after checks: diff only in allowed files, size cap, CI green. Replies leave through the inbox tool after schema check and round cap. Resolving threads rides on the promoter. Approve and merge never | Irreversible or external effects driven by the message | GitHub push-only single branch; plan-then-execute pattern | A future CLI and the inbox |
+| 5 · Human gates by how reversible the action is | Worktree edits: none. Push to the merge request branch: the promoter, or B at the lowest ladder level. Approve and merge: always a person. Every escalation names who sent what | Consent fatigue, the most bypassed control in Microsoft's red teaming | Microsoft taxonomy v2; OWASP LLM01 | Plugin and hooks, and GitLab |
+| 6 · Detection and audit | Injection classifier on inbound findings at the gateway, for noise. Every message and promotion logged with its sender. Off-policy attempts logged as security events. A canary suite in CI | Lowers how often an attempt gets through; produces evidence | Anthropic 8% to 1.4%; GitLab log-only scan; ATLAS telemetry | Gateway, plugin and hooks |
 
 **Where the checks live.** The plugin runs checks at both ends as the local enforcement point of a central policy, never as the only one.
 
 | Check | A's plugin (outbox) | Gateway | Inbox service | B's plugin (inbox) |
 |---|---|---|---|---|
 | Shape into the typed schema | Builds it | | Rejects malformed (the check that counts) | Re-validates, renders as data |
-| Secrets and personal data | Best place: strip before data leaves the laptop, reusing the guard's secret patterns. Hygiene only | | Central, Security-owned check, logged | |
+| Secrets and personal data | Best place: strip before data leaves the laptop, reusing the guard's secret patterns. Hygiene only | | Central check owned by the security function, logged | |
 | Provenance | Signs as A | Verifies identity; checks A may send to that merge request; rejects replays | Stores the sender on every event | Shows B who sent what |
 | Hidden Unicode and HTML | Hygiene | | Canonical: stores only the cleaned form, so the audit shows what B saw | Strips again |
 | Injection classifier | | Optional webhook | Scores and tags, noise only | |
 | Round and size cap | Local early stop | Rate limits | Enforced | Reply tool refuses past the cap |
-| Quarantine tool rules | Not the plugin's job | | | Not the plugin's job: harness hooks and the managed deny floor, with or without the plugin |
+| Quarantine tool rules | Not the plugin's job | | | Not the plugin's job: the quarantine guard hook and the managed deny floor, with or without the plugin |
 
-Trust classes: A's plugin is in the sender's hands and is exactly what Risk 1 assumes may be steered, so its checks are hygiene. The gateway and inbox are out of both parties' hands. B's plugin is in the receiver's hands and is the last hop before the model, so it re-validates rather than trusting the wire. One validator, versioned with the harness, runs at both ends.
+Trust classes: A's plugin is in the sender's hands and is exactly what Risk 1 assumes may be steered, so its checks are hygiene. The gateway and inbox are out of both parties' hands. B's plugin is in the receiver's hands and is the last hop before the model, so it re-validates rather than trusting the wire. One validator, versioned with the plugin, runs at both ends.
 
 **What remains.** A steered or careless reviewer agent can still make B's agent propose a bad or subtly wrong change inside the files under review, send a bad-faith reply, or waste B's time. It cannot leak secrets, reach the network, touch build or dependency files, push outside the merge request branch, approve, or merge. The harm stays local and reversible, and the same review and CI that catch a bad human contribution catch it. That is the residual to accept.
 
 **Today is worse on this measure.** The author pastes the reviewer's artifact into a full-power session: untrusted text, the author's credentials and push rights in one place, behind a human reading that rarely happens. The channel with the envelope moves the same content into a session that cannot leak or push on its own. The risk does not disappear; it gets a boundary it does not have now.
 
-**How we would know.** Zero violations of the deterministic rules across an adaptive canary suite run many times, a reported success rate for the attempts the model refused on its own, and one human red-team round with full knowledge of the design. Repeated on every model or harness upgrade.
+**How we would know.** Zero violations of the deterministic rules across an adaptive canary suite run many times, a reported success rate for the attempts the model refused on its own, and one human red-team round with full knowledge of the design. Repeated on every model or plugin upgrade.
 
 ### 8.2 Risk 2: nobody has decided what B's agent may do on its own (authority is undefined)
 
@@ -265,7 +301,7 @@ Trust classes: A's plugin is in the sender's hands and is exactly what Risk 1 as
 
 **The ladder.** L0: read and brief B. L1: prepare the change, do not commit. L2: commit and reply on the merge request branch. L3: also resolve threads and mark ready. Never: approve or merge. The industry sits at L2 with a human trigger.
 
-**What reduces it.** Make the ladder a per-team setting the harness enforces, not a platform team opinion. Start at L1, promote after a trial. Tie the ceiling to the class of finding: facts may climb, taste and product choices stop at L0.
+**What reduces it.** Make the ladder a per-team setting the plugin and hooks enforce, not a platform team opinion. Start at L1, promote after a trial. Tie the ceiling to the class of finding: facts may climb, taste and product choices stop at L0.
 
 **What the envelope changes.** L1 needs no trust in the model. L2 becomes reachable without B reading, because the promoter and not the model does the push. L3's thread resolution rides on the promoter. Approve and merge never move.
 
@@ -280,7 +316,7 @@ Set the authority ceiling low and Risk 1 is survivable. Set it high and Risk 1 e
 | # | Decision | Options | Why it matters |
 |---|---|---|---|
 | 1 | What a message is addressed to | Work item · session · person | Load-bearing for the architecture. Recommendation: the work item |
-| 2 | Authority ceiling | L0 · L1 · L2 · L3 | Risk 2's rule and Risk 1's main control. Per team, enforced by the harness |
+| 2 | Authority ceiling | L0 · L1 · L2 · L3 | Risk 2's rule and Risk 1's main control. Per team, enforced by the plugin and hooks |
 | 3 | Who may send | Anyone in the organization · reviewers and assignees of that merge request · explicit pairing | Risk 1's trust boundary |
 | 4 | Escalation rule | Facts the agents settle, taste and product choices go to the human · everything disputed goes to the human. Plus the round cap | Defines "human only when needed" |
 | 5 | Visibility rule | Outcomes and escalations on the merge request · the whole exchange · nothing | "Nothing" is not viable |
@@ -310,8 +346,8 @@ Spike checks that fold into the experiment: confirm the plan tier and the channe
 | Stage | When | What |
 |---|---|---|
 | Spike | Two weeks, on the dev gateway | A fakechat-style channel plugin on the development flag. An inbox service of a few hundred lines behind the gateway with DEX JWT. One real merge request. Go or no-go on the experiment |
-| v1 | After the spike | Plugin in the plugin marketplace and on the organization allowlist. `SessionStart` pull. The two skills. The quarantine hooks and the promoter in the harness CLI. Outcome summary mirrored to the merge request. Round cap and sender gate. Access logs to Loki |
-| v2 | Later | The CI lane posts into the inbox. Permission relay to Slack or phone. A2A conformance so a non-Claude agent can join. The inbox becomes the first service of the standalone harness application |
+| v1 | After the spike | Plugin in a plugin marketplace and on the organization allowlist. `SessionStart` pull. The two skills. The quarantine hooks and the promoter in a future CLI. Outcome summary mirrored to the merge request. Round cap and sender gate. Access logs to Loki |
+| v2 | Later | The CI lane posts into the inbox. Permission relay to Slack or phone. A2A conformance so a non-Claude agent can join. The inbox becomes the first service of a standalone agent application |
 
 ---
 
@@ -320,7 +356,7 @@ Spike checks that fold into the experiment: confirm the plan tier and the channe
 - A per-person agent inbox with corporate identity. No product sells it.
 - The debate is agent-to-agent; the record is human. People see outcomes and decisions, not the negotiation.
 - Escalation from anywhere, through permission relay, while the session waits.
-- One inbox, many flows: ticket-readiness questions, deploy-verification results, the standalone harness application.
+- One inbox, many flows: ticket-readiness questions, deploy-verification results, a standalone agent application.
 
 ---
 
@@ -392,9 +428,9 @@ Claims about the gateway in this document come from the vendor's documentation f
 - Subscription traffic through a gateway with only the base URL set: allowed; the gateway forwards the OAuth capability in `anthropic-beta`.
 - Products built with the Agent SDK and third-party developers: API keys or a cloud provider, never routed through Free, Pro or Max credentials.
 
-**Harness.**
-- The harness guard rule ids: pipe-to-shell, sudo-rm, rm-outside-cwd, force-push-protected, secret-read, secret-file.
-- The central guard policy file: protected branches, secret globs, disable rules. CODEOWNERS-gated.
+**Quarantine guard and hooks.**
+- `quarantine/guard.mjs` rule ids: blocked-file, not-in-diff, outside-worktree, unresolved-target, too-deep, secret-read, network-command, network-tool, network-inline-code, package-network, git-network, git-config-write, git-config-override, git-internals, patch-apply, bad-input.
+- `quarantine/blocked.json`: blocked file globs, mirrored from `inbox/internal/rules` and checked by the promoter tests.
 - The secret-injection hook skips prompts starting with `<agent-message`, `<task-notification>`, `<cross-session-message`, `<scheduled-task`. Add `<channel`.
 
 ## Appendix B: sources

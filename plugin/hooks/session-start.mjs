@@ -62,5 +62,5 @@ await runHook('session-start', async ({ input, checkout, identity, client, log, 
     writeBridge(checkout, claudePid, { sessionId, cwd });
   }
 }, {
-  onError: (message) => ({ systemMessage: `aic-inbox: inbox not reached at session start (${message}). Review messages may be waiting.` }),
+  onError: (message) => ({ systemMessage: `aic-inbox: inbox not reached at session start (${message}). Messages may be waiting.` }),
 });

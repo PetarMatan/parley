@@ -74,7 +74,7 @@ EOF
   cat > README.md <<'EOF'
 # shop
 
-Tiny price helpers for the agent review channel sandbox.
+Tiny price helpers for the agent conversation channel sandbox.
 
 Run the tests with `npm test`. No dependencies, no network.
 EOF

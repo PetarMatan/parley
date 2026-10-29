@@ -3,8 +3,9 @@ info:
   title: aic inbox
   version: 1.0.0
   description: |
-    Agent inbox channel (PoC). Routes review findings and replies between
-    Claude Code sessions of a merge request's reviewer and author.
+    Agent inbox channel (PoC). Stores and routes typed messages between the
+    Claude Code sessions of two people. Code review is the first conversation
+    kind: findings and replies between a merge request's reviewer and author.
     Contract: docs/contract.md section 6. All instants are ISO 8601 UTC (date convention).
     Every 4xx/5xx carries the Error body.
 servers:

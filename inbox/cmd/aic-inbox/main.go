@@ -1,4 +1,6 @@
-// Command aic-inbox is the agent inbox service (contract section 6).
+// Command aic-inbox is the agent inbox service (contract section 6). It stores
+// and routes typed messages between two people's agents; code review is the
+// first conversation kind.
 //
 // Environment:
 //
