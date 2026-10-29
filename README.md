@@ -1,4 +1,4 @@
-# agentic-conversation
+# Parley
 
 A channel that lets one person's coding agent talk to another person's coding agent, with identity checks, store-and-forward delivery, a quarantine for the receiving agent, and a program, not a model, deciding what reaches the repository.
 
@@ -50,7 +50,7 @@ Person A's laptop                  Shared services                    Person B's
 5. The receiving agent works in a quarantine: an isolated worktree with no secrets, no network, and a guard hook that blocks writes outside the change under discussion.
 6. A deterministic promoter is the only exit for code. It pushes to the branch after fixed checks. Replies travel back on the same path with the same checks. A round cap ends a conversation that does not converge, and both people are told.
 
-The design record explains every decision, the two risks that decide feasibility, and the control layers: [agentic-conversation-design.md](agentic-conversation-design.md).
+The design record explains every decision, the two risks that decide feasibility, and the control layers: [parley-design.md](parley-design.md).
 
 ## Quick start
 
@@ -67,8 +67,8 @@ Prerequisites:
 Build, test, and bring up the sandbox:
 
 ```bash
-git clone <this repository> agentic-conversation
-cd agentic-conversation
+git clone https://github.com/PetarMatan/parley.git
+cd parley
 (cd plugin && npm ci)
 make build        # Go binaries into work/bin
 make test         # Go and Node test suites
@@ -162,8 +162,8 @@ Candidate next kinds, not built: ticket-readiness questions, deploy-verification
 
 ## Documentation
 
-- [agentic-conversation-design.md](agentic-conversation-design.md): design record, risks, control layers, open questions.
-- [agentic-conversation-poc.md](agentic-conversation-poc.md): proof-of-concept plan, test plan, canary suite.
+- [parley-design.md](parley-design.md): design record, risks, control layers, open questions.
+- [parley-poc.md](parley-poc.md): proof-of-concept plan, test plan, canary suite.
 - [docs/runbook.md](docs/runbook.md): step-by-step run on one machine, and with a second person.
 - [docs/contract.md](docs/contract.md): message shapes, cleaning rules, routing and state rules.
 - [inbox/openapi.yaml](inbox/openapi.yaml): HTTP API of the inbox.

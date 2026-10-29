@@ -15,11 +15,11 @@ import (
 	"sync"
 	"time"
 
-	"agentic-conversation/aic/internal/auth"
-	"agentic-conversation/aic/internal/logx"
-	"agentic-conversation/aic/internal/mr"
-	"agentic-conversation/aic/internal/rules"
-	"agentic-conversation/aic/internal/store"
+	"github.com/PetarMatan/parley/inbox/internal/auth"
+	"github.com/PetarMatan/parley/inbox/internal/logx"
+	"github.com/PetarMatan/parley/inbox/internal/mr"
+	"github.com/PetarMatan/parley/inbox/internal/rules"
+	"github.com/PetarMatan/parley/inbox/internal/store"
 )
 
 // MaxBody is the request body cap (contract 6).

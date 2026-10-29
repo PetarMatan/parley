@@ -48,7 +48,7 @@ Validate both configs without starting the PoC: `bash gateway/validate.sh`.
 ## Shared shell setup for the checks
 
 ```bash
-cd "$HOME/Desktop/ai-development/agentic-conversation"
+cd "$ROOT"   # the repository root
 export AIC_WORK="$PWD/work"
 G=http://localhost:3000
 TA="$(cat "$AIC_WORK/tokens/a@example.com.jwt")"

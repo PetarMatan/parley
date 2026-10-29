@@ -5,7 +5,7 @@
 | Status | Exploration. Feasibility assessed, direction chosen, nothing built. |
 | Date | 28 October 2026 |
 | Owner | Petar Matan |
-| Location | `~/Desktop/ai-development/agentic-conversation/`, the project folder for this work, next to the proof of concept plan. |
+| Location | The `parley` repository (https://github.com/PetarMatan/parley), next to the proof of concept plan. |
 
 This record keeps everything the exploration produced: the problem, the context we started from, what the industry does, the decisions taken, the architecture, the constraints that shape it, the two risks that decide feasibility and how to contain them, what is still open, and the facts verified along the way. The companion page (not included in this repository) is the short, visual version for discussion. This file is the complete one.
 

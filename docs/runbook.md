@@ -5,7 +5,7 @@ This runbook covers PoC plan days 1–7 on one laptop (topology A) and notes for
 All commands run from the repository root unless stated.
 
 ```bash
-export ROOT="$HOME/Desktop/ai-development/agentic-conversation"
+export ROOT="$PWD"                             # run from the repository root
 export AIC_WORK="$ROOT/work"
 export AIC_BASE_URL="http://localhost:3000"     # gateway; direct mode: http://127.0.0.1:7070
 cd "$ROOT"
@@ -262,13 +262,13 @@ macOS asks to allow incoming connections for Docker and git: allow both. Send th
 Prerequisites: Node 22, Claude Code 2.1.303 or newer, logged in to the example.com Team organization, and a copy of this PoC repository (for the plugin).
 
 ```bash
-cd agentic-conversation && (cd plugin && npm ci)
+cd parley && (cd plugin && npm ci)
 git clone git://HOST_IP/local/shop.git work/clone-a && cd work/clone-a
 mkdir -p .aic && cp ~/Downloads/a@example.com.jwt .aic/token.jwt
 printf '{"user":"a@example.com","token_file":"%s/.aic/token.jwt","base_url":"http://HOST_IP:3000"}\n' "$PWD" > .aic/identity.json
 ```
 
-The clone's `main` branch already carries `.claude/settings.json` and `.mcp.json`, but with the host's absolute paths. Replace `/Users/<host-user>/Desktop/ai-development/agentic-conversation` with this laptop's path to the PoC repository in both files (the hooks and the MCP server must point at this laptop's `plugin/`). Do not commit that change. Then:
+The clone's `main` branch already carries `.claude/settings.json` and `.mcp.json`, but with the host's absolute paths. Replace `/Users/<host-user>/path/to/parley` with this laptop's path to the PoC repository in both files (the hooks and the MCP server must point at this laptop's `plugin/`). Do not commit that change. Then:
 
 ```bash
 curl -s http://HOST_IP:3000/healthz                                  # {"ok":true}

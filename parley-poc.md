@@ -5,8 +5,8 @@
 | Status | Plan only. Nothing built, installed or configured. |
 | Date | 28 October 2026 |
 | Owner | Petar Matan |
-| Design record | `agentic-conversation-design.md` in this folder |
-| Location | `~/Desktop/ai-development/agentic-conversation/`, the project folder for this work. |
+| Design record | `parley-design.md` in this folder |
+| Location | The `parley` repository (https://github.com/PetarMatan/parley). |
 
 The goal of the proof of concept is to answer three questions before any real build. Can a finding travel from one developer's Claude Code session into another developer's session and be acted on? Does the envelope around Risk 1 hold when the finding is poisoned? Which of the eleven spike checks in the design record pass on real software? Everything below is chosen to answer those questions with the least setup. The proof of concept exercises the review conversation kind because it is the most complete case.
 

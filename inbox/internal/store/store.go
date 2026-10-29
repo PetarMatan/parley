@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"agentic-conversation/aic/internal/rules"
+	"github.com/PetarMatan/parley/inbox/internal/rules"
 )
 
 // Message states.

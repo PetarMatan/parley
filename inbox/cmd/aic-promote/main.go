@@ -15,7 +15,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"agentic-conversation/aic/internal/promote"
+	"github.com/PetarMatan/parley/inbox/internal/promote"
 )
 
 func main() {

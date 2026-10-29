@@ -33,11 +33,11 @@ import (
 	"syscall"
 	"time"
 
-	"agentic-conversation/aic/internal/api"
-	"agentic-conversation/aic/internal/auth"
-	"agentic-conversation/aic/internal/logx"
-	"agentic-conversation/aic/internal/mr"
-	"agentic-conversation/aic/internal/store"
+	"github.com/PetarMatan/parley/inbox/internal/api"
+	"github.com/PetarMatan/parley/inbox/internal/auth"
+	"github.com/PetarMatan/parley/inbox/internal/logx"
+	"github.com/PetarMatan/parley/inbox/internal/mr"
+	"github.com/PetarMatan/parley/inbox/internal/store"
 )
 
 func main() {

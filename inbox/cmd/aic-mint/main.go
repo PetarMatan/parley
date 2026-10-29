@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"agentic-conversation/aic/internal/auth"
+	"github.com/PetarMatan/parley/inbox/internal/auth"
 )
 
 func main() {

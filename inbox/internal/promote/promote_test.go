@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"agentic-conversation/aic/internal/rules"
+	"github.com/PetarMatan/parley/inbox/internal/rules"
 )
 
 type fakeInbox struct {

@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"agentic-conversation/aic/internal/rules"
+	"github.com/PetarMatan/parley/inbox/internal/rules"
 )
 
 // Check names, in contract order.

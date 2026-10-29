@@ -1,6 +1,6 @@
 | Open point | Choice | Why |
 |---|---|---|
-| Package path of the canonical rules | `inbox/internal/rules`, not `inbox/internal/validate` as contract section 5 says | The foundation task names `internal/rules`. The inbox stream imports `agentic-conversation/aic/internal/rules` |
+| Package path of the canonical rules | `inbox/internal/rules`, not `inbox/internal/validate` as contract section 5 says | The foundation task names `internal/rules`. The inbox stream imports `github.com/PetarMatan/parley/inbox/internal/rules` |
 | Names in `tags.stripped` | `zero-width`, `bidi`, `unicode-tag`, `bom`, `html-comment`, `image`, `link`, `tag`, `blank-lines`, always in that order, no duplicates | The contract names only two. A fixed order lets both implementations compare arrays exactly |
 | Hidden-character classes | zero-width = U+200B–U+200D, U+2060–U+2064; bidi = U+200E, U+200F, U+202A–U+202E, U+2066–U+2069; unicode-tag = U+E0000–U+E007F; bom = U+FEFF | Splits the contract ranges into the four classes the vectors test |
 | Cleaning order | Hidden characters first, then repeat {HTML comment, image, link, tag} until the text stops changing (max 8 passes), then blank lines | Hidden characters can split `<!--` or a secret. One removal can join the halves of another tag (`<<b>system-reminder>`) |

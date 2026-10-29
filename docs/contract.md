@@ -7,11 +7,11 @@ All names are prefixed `aic` (agent inbox channel). All dates are ISO 8601 with 
 ## 1. Repository layout
 
 ```
-agentic-conversation/
+parley/
 ├─ DECISIONS.md                 merged decision log (main session owns)
 ├─ docs/                        plan, contract, conventions, runbook, decisions/<stream>.md
 ├─ schema/                      finding.v1.json, reply.v1.json, note.v1.json, vectors.json   (shared, both validators test against vectors.json)
-├─ inbox/                       Go module agentic-conversation/aic  (stdlib only)
+├─ inbox/                       Go module github.com/PetarMatan/parley/inbox  (stdlib only)
 │  ├─ cmd/aic-inbox             the inbox service
 │  ├─ cmd/aic-mint              key pair, JWKS, mock tokens
 │  ├─ cmd/aic-promote           the promoter

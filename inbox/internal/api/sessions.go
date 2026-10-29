@@ -8,9 +8,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"agentic-conversation/aic/internal/logx"
-	"agentic-conversation/aic/internal/route"
-	"agentic-conversation/aic/internal/store"
+	"github.com/PetarMatan/parley/inbox/internal/logx"
+	"github.com/PetarMatan/parley/inbox/internal/route"
+	"github.com/PetarMatan/parley/inbox/internal/store"
 )
 
 var sessionIDRe = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)

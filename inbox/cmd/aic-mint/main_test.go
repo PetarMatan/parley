@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"agentic-conversation/aic/internal/auth"
+	"github.com/PetarMatan/parley/inbox/internal/auth"
 )
 
 func TestMint(t *testing.T) {
