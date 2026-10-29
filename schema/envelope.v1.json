@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aic.local/schema/envelope.v1.json",
+  "title": "envelope.v1",
+  "description": "What the inbox stores and delivers. payload is the cleaned form only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["message_id", "context_id", "task_id", "round", "from", "to", "sent_at", "payload", "tags", "state"],
+  "properties": {
+    "message_id": { "type": "string", "pattern": "^m-[0-9A-Za-z]+$", "pii-classification": "no-pii" },
+    "context_id": { "type": "string", "maxLength": 256, "pii-classification": "no-pii" },
+    "task_id": { "type": "string", "pattern": "^f-[0-9a-f]{8}$", "pii-classification": "no-pii" },
+    "round": { "type": "integer", "minimum": 1, "pii-classification": "no-pii" },
+    "from": { "type": "string", "description": "Sender email from the token, or aic-inbox for system replies", "pii-classification": "direct-identifier" },
+    "to": { "type": "string", "description": "Addressee email", "pii-classification": "direct-identifier" },
+    "sent_at": { "type": "string", "format": "date-time", "description": "ISO 8601 UTC with zone (date convention)", "pii-classification": "no-pii" },
+    "payload": {
+      "oneOf": [
+        { "$ref": "https://aic.local/schema/finding.v1.json" },
+        { "$ref": "https://aic.local/schema/reply.v1.json" }
+      ],
+      "pii-classification": "no-pii"
+    },
+    "tags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["injection_score", "stripped"],
+      "properties": {
+        "injection_score": { "type": "number", "minimum": 0, "maximum": 1, "pii-classification": "no-pii" },
+        "stripped": {
+          "type": "array", "uniqueItems": true,
+          "items": { "enum": ["zero-width", "bidi", "unicode-tag", "bom", "html-comment", "image", "link", "tag", "blank-lines"] },
+          "pii-classification": "no-pii"
+        }
+      }
+    },
+    "state": { "enum": ["queued", "pushed", "acked"], "pii-classification": "no-pii" }
+  }
+}

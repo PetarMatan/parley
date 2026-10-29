@@ -1,0 +1,21 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "network": {
+      "allowedDomains": [],
+      "strictAllowlist": true,
+      "allowLocalBinding": false
+    }
+  },
+  "permissions": {
+    "allow": [
+      "mcp__aic-inbox__inbox_promote",
+      "mcp__aic-inbox__inbox_reply",
+      "mcp__aic-inbox__inbox_note",
+      "mcp__aic-inbox__inbox_list",
+      "mcp__aic-inbox__inbox_ack"
+    ]
+  }
+}

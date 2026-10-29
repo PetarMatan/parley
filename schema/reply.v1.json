@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aic.local/schema/reply.v1.json",
+  "title": "reply.v1",
+  "description": "A reply inside an existing task, either direction. kind maps to task state: fixed/accepted -> completed, withdrawn -> canceled, escalated -> input-required, disputed/answer/acknowledged -> working.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "context_id", "task_id", "kind", "note"],
+  "properties": {
+    "schema": { "const": "reply.v1", "pii-classification": "no-pii" },
+    "context_id": {
+      "type": "string", "maxLength": 256,
+      "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*![1-9][0-9]{0,9}$",
+      "pii-classification": "no-pii"
+    },
+    "task_id": { "type": "string", "pattern": "^f-[0-9a-f]{8}$", "pii-classification": "no-pii" },
+    "kind": { "enum": ["fixed", "disputed", "answer", "accepted", "withdrawn", "escalated", "acknowledged"], "pii-classification": "no-pii" },
+    "note": { "type": "string", "minLength": 1, "maxLength": 2000, "pii-classification": "no-pii" },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$", "pii-classification": "no-pii" }
+  }
+}

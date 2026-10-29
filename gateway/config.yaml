@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agentgateway/agentgateway/26f5aebe99a36a037fe54f8080a608aca5547e15/schema/config.json
+# agentgateway v1.7.0 standalone config for the aic PoC.
+# Field names checked against schema/config.json at the image's source revision
+# (26f5aebe) and with `agentgateway --validate-only`. See docs/gateway-notes.md.
+config:
+  logging:
+    format: json
+    level: info
+
+frontendPolicies:
+  accessLog:
+    # Extra fields on every access log line (stdout). jwt.* is absent on routes
+    # without jwtAuth (/healthz) and on refused tokens; the field is then omitted.
+    add:
+      intLevel: "3"        # log convention: access log lines are INFO
+      sender: jwt.email     # identity the inbox also uses (contract section 3); change
+                            # if an issuer's identity_claim in AIC_ISSUERS is not email
+      sub: jwt.sub
+      iss: jwt.iss
+  http:
+    # Idle keep-alive connections only; an open SSE stream carries a ping every 15 s.
+    http1IdleTimeout: 2h
+
+gateways:
+  default:
+    port: 3000
+
+routes:
+# Contract section 6: /healthz is the one route without a bearer token.
+- name: healthz
+  matches:
+  - path:
+      exact: /healthz
+  backends:
+  - host: host.docker.internal:7070
+
+- name: inbox
+  matches:
+  - path:
+      pathPrefix: /
+  policies:
+    jwtAuth:
+      mode: strict
+      # Default is false: the gateway strips the token after validating it.
+      # The inbox re-validates the same token (DECISIONS D7), so keep it.
+      preserveToken: true
+      providers:
+      - issuer: https://aic.local/mock
+        audiences: [aic-inbox]
+        jwks:
+          file: /work/keys/jwks.json
+      # The local OIDC provider (DEX in docker compose). Its tokens carry iss
+      # http://localhost:5556/dex (the URL the host-side login uses). Inside the
+      # compose network localhost is this container, so the keys come from the
+      # dex service name. Only the iss string has to match.
+      # For another provider set `issuer` and `jwks.url` from its discovery
+      # document (`jwks_uri`).
+      - issuer: http://localhost:5556/dex
+        audiences: [aic-cli]
+        jwks:
+          url: http://dex:5556/dex/keys
+      # Example: a third provider (placeholder values; not validated).
+      # - issuer: https://login.example.com/realms/dev
+      #   audiences: [aic-cli]
+      #   jwks:
+      #     url: https://login.example.com/realms/dev/protocol/openid-connect/certs
+    timeout:
+      # requestTimeout ends when response headers arrive, so it never cuts an SSE
+      # body. Kept long in case the inbox delays the headers of a stream.
+      requestTimeout: 24h
+      backendRequestTimeout: 24h
+      # responseIdleTimeout stays unset: unset means disabled (spike check 7).
+  backends:
+  - host: host.docker.internal:7070

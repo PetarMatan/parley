@@ -1,0 +1,24 @@
+{
+  "source": "inbox/internal/rules/scan.go BlockedFiles (hand-mirrored; inbox/internal/promote tests fail when the two lists differ)",
+  "globs": [
+    ".gitlab-ci.yml",
+    ".github/**",
+    ".claude/**",
+    ".mcp.json",
+    "CLAUDE.md",
+    ".husky/**",
+    "**/package.json",
+    "**/package-lock.json",
+    "**/go.mod",
+    "**/go.sum",
+    "**/*.lock",
+    "**/requirements*.txt",
+    "**/pyproject.toml",
+    "Dockerfile*",
+    ".aic/**",
+    "**/pnpm-lock.yaml",
+    "**/npm-shrinkwrap.json",
+    "**/.npmrc",
+    "**/.claude/**"
+  ]
+}

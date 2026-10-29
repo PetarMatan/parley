@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit|WebFetch|WebSearch|Read|Grep|Glob",
+        "hooks": [
+          { "type": "command", "command": "__GUARD__", "timeout": 30 },
+          { "type": "command", "command": "__EXTRA_GUARD__", "timeout": 30 }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "WebFetch",
+      "WebSearch",
+      "Bash(git push *)",
+      "Bash(git fetch *)",
+      "Bash(git remote *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Edit(./.claude/**)",
+      "Edit(./.mcp.json)",
+      "Edit(./CLAUDE.md)",
+      "Edit(./.aic/**)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "network": {
+      "allowedDomains": [],
+      "allowUnixSockets": [],
+      "allowLocalBinding": false
+    }
+  }
+}

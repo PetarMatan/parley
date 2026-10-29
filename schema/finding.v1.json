@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aic.local/schema/finding.v1.json",
+  "title": "finding.v1",
+  "description": "One review finding sent from reviewer to MR author. Lengths count Unicode code points of the raw value. Cleaning rules: contract section 5.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "context_id", "task_id", "file", "line", "category", "severity", "class", "title", "note"],
+  "properties": {
+    "schema": { "const": "finding.v1", "pii-classification": "no-pii" },
+    "context_id": {
+      "type": "string", "maxLength": 256,
+      "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*![1-9][0-9]{0,9}$",
+      "description": "<repo>!<iid>, e.g. local/shop!1",
+      "pii-classification": "no-pii"
+    },
+    "task_id": { "type": "string", "pattern": "^f-[0-9a-f]{8}$", "pii-classification": "no-pii" },
+    "file": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Repository-relative path, no leading slash, no . or .. segments", "pii-classification": "no-pii" },
+    "line": { "type": "integer", "minimum": 1, "pii-classification": "no-pii" },
+    "category": { "enum": ["bug", "security", "performance", "maintainability", "test", "docs", "style"], "pii-classification": "no-pii" },
+    "severity": { "enum": ["blocker", "major", "minor", "nit"], "pii-classification": "no-pii" },
+    "class": { "enum": ["fact", "taste", "product"], "pii-classification": "no-pii" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120, "pii-classification": "no-pii" },
+    "note": { "type": "string", "minLength": 1, "maxLength": 2000, "pii-classification": "no-pii" },
+    "suggested_patch": { "type": "string", "maxLength": 4000, "description": "Unified diff text", "pii-classification": "no-pii" }
+  }
+}

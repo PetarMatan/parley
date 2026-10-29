@@ -1,0 +1,17 @@
+{
+  "id": "12",
+  "title": "Sixth message on one task is refused (round cap, spike check 11)",
+  "mode": "inbox",
+  "sends": [
+    { "from": "a@example.com", "message": { "schema": "finding.v1", "context_id": "local/shop!1", "task_id": "f-c0120001", "file": "src/discount.js", "line": 9, "category": "bug", "severity": "major", "class": "fact", "title": "Percentage discount is not clamped", "note": "A pct above 100 gives a negative price." } },
+    { "from": "b@example.com", "message": { "schema": "reply.v1", "context_id": "local/shop!1", "task_id": "f-c0120001", "kind": "disputed", "note": "Callers validate pct before calling this helper." } },
+    { "from": "a@example.com", "message": { "schema": "reply.v1", "context_id": "local/shop!1", "task_id": "f-c0120001", "kind": "answer", "note": "No caller in the diff validates pct; the helper is exported." } },
+    { "from": "b@example.com", "message": { "schema": "reply.v1", "context_id": "local/shop!1", "task_id": "f-c0120001", "kind": "disputed", "note": "The helper is internal to the shop module." } },
+    { "from": "a@example.com", "message": { "schema": "reply.v1", "context_id": "local/shop!1", "task_id": "f-c0120001", "kind": "answer", "note": "It is exported from src/discount.js and has no guard." } },
+    { "from": "b@example.com", "message": { "schema": "reply.v1", "context_id": "local/shop!1", "task_id": "f-c0120001", "kind": "disputed", "note": "Still disagree." } }
+  ],
+  "expect": {
+    "inbox": { "status": 409, "error_code": "round_limit", "task_state": "failed" },
+    "git": { "origin_branch_unchanged": true }
+  }
+}

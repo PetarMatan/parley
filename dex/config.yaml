@@ -1,0 +1,74 @@
+# DEX v2.46.1: the local stand-in OIDC provider for the sandbox (spike check 8).
+# Any standard OIDC provider can replace it (docs/runbook.md section 8).
+# PoC only: static users, no TLS.
+# The image's entrypoint runs gomplate over *.yaml files; this file has no
+# template syntax, so it passes through unchanged.
+
+# Host-side clients (plugin/login.mjs, the inbox) reach it at localhost:5556.
+# The gateway container fetches keys from http://dex:5556/dex/keys instead;
+# token validation compares only this iss string. See docs/gateway-notes.md.
+issuer: http://localhost:5556/dex
+
+# sqlite inside the container: keys and refresh tokens survive a container
+# restart. The gateway loads the JWKS once at startup, so new keys after a
+# `down`/`up` of dex alone would be unknown to it until it restarts too.
+storage:
+  type: sqlite3
+  config:
+    file: /var/dex/dex.db
+
+web:
+  http: 0.0.0.0:5556
+
+signer:
+  type: local
+  config:
+    # Longer than any PoC run, so the gateway's startup copy of the JWKS stays valid.
+    keysRotationPeriod: 720h
+    algorithm: RS256
+
+expiry:
+  idTokens: 1h
+  authRequests: 10m
+
+logger:
+  level: info
+  format: json
+
+oauth2:
+  # Explicit list: DEX's default list includes "password" and "implicit".
+  # The PKCE convention forbids the resource owner password grant. No passwordConnector is set.
+  grantTypes:
+  - authorization_code
+  - refresh_token
+  responseTypes: [code]
+  skipApprovalScreen: true
+  pkce:
+    # PKCE convention: a local CLI cannot keep a secret, so code flow with PKCE is mandatory.
+    enforce: true
+    codeChallengeMethodsSupported: [S256]
+
+staticClients:
+- id: aic-cli
+  name: aic CLI
+  public: true
+  redirectURIs:
+  - http://127.0.0.1:5557/callback
+
+enablePasswordDB: true
+
+# Password for all three users: see docs/gateway-notes.md (PoC only).
+# Hashes are bcrypt cost 10.
+staticPasswords:
+- email: a@example.com
+  username: a
+  userID: 7f1c2a0e-aic0-4a00-8000-00000000000a
+  hash: "$2a$10$vNRNlgibcDO/5kN10TIRDuWVAHVsAjoTtsUkelGgF9K2XlhXkHUYS"
+- email: b@example.com
+  username: b
+  userID: 7f1c2a0e-aic0-4b00-8000-00000000000b
+  hash: "$2a$10$FOzCdWHpior0t0fT8NmzZ.vuLkPeRBfMte2.SHUbsz/NDYf.5y6Wu"
+- email: c@example.com
+  username: c
+  userID: 7f1c2a0e-aic0-4c00-8000-00000000000c
+  hash: "$2a$10$kVQPLTH1ipKQoBFlGAzCJuYFIvbREGzYsO7jRL4Ze1kJwtA9sHaqy"

@@ -1,0 +1,21 @@
+{
+  "id": "11",
+  "title": "Sender c@ is not a reviewer or assignee of the merge request (spike check 10)",
+  "mode": "inbox",
+  "sends": [
+    {
+      "from": "c@example.com",
+      "message": {
+        "schema": "finding.v1", "context_id": "local/shop!1", "task_id": "f-c0110001",
+        "file": "src/discount.js", "line": 9,
+        "category": "bug", "severity": "major", "class": "fact",
+        "title": "Percentage discount is not clamped",
+        "note": "A pct above 100 gives a negative price."
+      }
+    }
+  ],
+  "expect": {
+    "inbox": { "status": 403, "error_code": "sender_not_allowed", "task_stored": false },
+    "git": { "origin_branch_unchanged": true }
+  }
+}

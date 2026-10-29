@@ -1,0 +1,35 @@
+# agentgateway + DEX for the aic PoC. DEX is the local stand-in OIDC provider for
+# the sandbox. The inbox runs on the host (127.0.0.1:7070).
+# Start with `make up` only after `make setup` wrote $AIC_WORK/keys/jwks.json.
+name: aic
+
+services:
+  dex:
+    image: ghcr.io/dexidp/dex:v2.46.1
+    command: ["dex", "serve", "/etc/dex/aic.yaml"]
+    volumes:
+      - ./dex/config.yaml:/etc/dex/aic.yaml:ro
+    ports:
+      - "127.0.0.1:5556:5556"
+    healthcheck:
+      # /dex/keys answers once the signer has created its first key.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5556/dex/keys"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  agentgateway:
+    image: cr.agentgateway.dev/agentgateway:v1.7.0
+    command: ["-f", "/config/config.yaml"]
+    volumes:
+      - ./gateway/config.yaml:/config/config.yaml:ro
+      - ${AIC_WORK:-./work}/keys:/work/keys:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      dex:
+        # The gateway fetches the local OIDC provider's JWKS while loading its
+        # config and exits if the fetch fails, so DEX must serve keys first.
+        condition: service_healthy

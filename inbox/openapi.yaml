@@ -1,0 +1,313 @@
+openapi: 3.1.0
+info:
+  title: aic inbox
+  version: 1.0.0
+  description: |
+    Agent inbox channel (PoC). Routes review findings and replies between
+    Claude Code sessions of a merge request's reviewer and author.
+    Contract: docs/contract.md section 6. All instants are ISO 8601 UTC (date convention).
+    Every 4xx/5xx carries the Error body.
+servers:
+  - url: http://127.0.0.1:7070
+    description: direct
+  - url: http://localhost:3000
+    description: through agentgateway
+security:
+  - bearer: []
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      security: []
+      responses:
+        '200':
+          description: Alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { const: true }
+  /v1/sessions/{session_id}:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    put:
+      operationId: putSession
+      description: Register or update (CwdChanged) a session. The user comes from the token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SessionRegistration' }
+      responses:
+        '200':
+          description: Registered.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteSession
+      description: Remove the registration and close its stream. Unknown ids return 204.
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /v1/sessions/{session_id}/events:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      operationId: streamEvents
+      description: |
+        Server-sent events. Opening the stream makes the session live and
+        pushes every queued message that routes to it. Frames:
+        `event: message` / `id: <message_id>` / `data: <Envelope JSON>`, and a
+        `: ping` comment every 15 s. Unacked pushed messages return to queued
+        when the stream closes. A second stream for the same session replaces
+        the first.
+      responses:
+        '200':
+          description: Event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Each data line is one Envelope (components.schemas.Envelope).
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /v1/inbox:
+    get:
+      operationId: listInbox
+      description: Queued or pushed (not acked) messages for the caller in a repo, oldest first.
+      parameters:
+        - { name: repo, in: query, required: true, schema: { type: string }, example: local/shop }
+        - { name: branch, in: query, required: false, schema: { type: string }, description: Accepted and ignored. }
+      responses:
+        '200':
+          description: Messages.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages]
+                properties:
+                  messages:
+                    type: array
+                    items: { $ref: '#/components/schemas/Envelope' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+  /v1/messages:
+    post:
+      operationId: postMessage
+      description: |
+        Send a finding (reviewer or assignee only, file must be in the MR diff
+        and not a blocked file) or a reply (finding sender or MR author only).
+        Optional header Aic-Session-Id names the sending session for reply routing.
+      parameters:
+        - name: Aic-Session-Id
+          in: header
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '../schema/finding.v1.json'
+                - $ref: '../schema/reply.v1.json'
+      responses:
+        '201':
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PostResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: duplicate_task, or round_limit (the task becomes failed and both participants get a system escalation).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+        '422':
+          description: file_not_in_diff or blocked_file.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/messages/{message_id}/ack:
+    parameters:
+      - { name: message_id, in: path, required: true, schema: { type: string, pattern: '^m-[0-9A-Za-z]+$' } }
+    post:
+      operationId: ackMessage
+      description: >-
+        Addressee only. queued or pushed become acked; acking twice is a no-op.
+        A message addressed to the merge request author (the finding and every later
+        message of the task sent to the author) is acked only by a quarantine session;
+        any other session of the author gets 409 quarantine_required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [session_id]
+              properties:
+                session_id: { type: string }
+      responses:
+        '204': { description: Acked. }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /v1/contexts/{context_id}:
+    parameters:
+      - $ref: '#/components/parameters/ContextId'
+    get:
+      operationId: getContext
+      description: The conversation of one merge request. MR members and service users only.
+      responses:
+        '200':
+          description: Conversation.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Conversation' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /v1/contexts/{context_id}/notes:
+    parameters:
+      - $ref: '#/components/parameters/ContextId'
+    post:
+      operationId: postNote
+      description: Append a cleaned note to the merge request. MR members and service users (promoter) only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schema/note.v1.json' }
+      responses:
+        '201':
+          description: Appended.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [context_id, posted_at]
+                properties:
+                  context_id: { type: string }
+                  posted_at: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256 token from a configured OIDC issuer (mock issuer aud aic-inbox; local provider DEX aud aic-cli). Identity is the issuer's identity_claim, default email.
+  parameters:
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[A-Za-z0-9._:-]{1,128}$' }
+    ContextId:
+      name: context_id
+      in: path
+      required: true
+      description: URL-encoded `<repo>!<iid>`, e.g. `local%2Fshop%211`.
+      schema: { type: string }
+  responses:
+    Error:
+      description: Error.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: |
+                snake_case. Validation: bad_json, unknown_field, invalid_type, missing_field,
+                bad_enum, too_long, empty_field, invalid_field, secret_detected.
+                Inbox: unauthorized, sender_not_allowed, not_addressee, not_member,
+                session_not_owned, session_not_found, message_not_found, task_not_found,
+                mr_not_found, duplicate_task, round_limit, file_not_in_diff, blocked_file,
+                too_large, not_found, internal.
+            message: { type: string }
+    SessionRegistration:
+      type: object
+      additionalProperties: false
+      required: [repo]
+      properties:
+        host: { type: string, maxLength: 1024 }
+        repo: { type: string, maxLength: 1024, example: local/shop }
+        branch: { type: string, maxLength: 1024 }
+        cwd: { type: string, maxLength: 1024 }
+        quarantine: { type: boolean, default: false, description: "true when the session runs in a quarantine worktree; delivery prefers it over the user's other sessions (D15); messages to the MR author go only to quarantine sessions" }
+    Session:
+      type: object
+      properties:
+        session_id: { type: string }
+        user: { type: string, description: email from the token }
+        host: { type: string }
+        repo: { type: string }
+        branch: { type: string }
+        cwd: { type: string }
+        quarantine: { type: boolean }
+        registered_at: { type: string, format: date-time }
+        last_active: { type: string, format: date-time }
+    PostResult:
+      type: object
+      required: [message_id, round, delivered]
+      properties:
+        message_id: { type: string }
+        round: { type: integer, minimum: 1 }
+        delivered: { enum: [pushed, queued] }
+    Envelope:
+      $ref: '../schema/envelope.v1.json'
+    Task:
+      type: object
+      properties:
+        task_id: { type: string }
+        state: { enum: [submitted, working, completed, input-required, rejected, canceled, failed] }
+        round: { type: integer }
+        class: { enum: [fact, taste, product] }
+        sender: { type: string }
+        addressee: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Conversation:
+      type: object
+      required: [context_id, participants, tasks, messages]
+      properties:
+        context_id: { type: string }
+        participants:
+          type: array
+          items: { type: string }
+        tasks:
+          type: array
+          items: { $ref: '#/components/schemas/Task' }
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/Envelope' }

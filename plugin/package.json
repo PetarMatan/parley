@@ -1,0 +1,15 @@
+{
+  "name": "aic-inbox-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "aic agent inbox channel: MCP channel server, hooks and OIDC login (PoC)",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2"
+  }
+}
