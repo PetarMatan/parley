@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Validate gateway/config.yaml and dex/config.yaml with the pinned images.
+# Validate gateway/config.yaml, deploy/local/dex/config.yaml and
+# deploy/local/compose.yaml with the pinned images.
 # Leaves nothing running. Needs Docker; the repo must be under a path Docker
 # Desktop shares (e.g. /Users).
 #
@@ -37,7 +38,7 @@ docker run --rm --network "$NET" \
 # YAML fields, so this proves less than the gateway check.
 echo "== dex serve (stops at listen)"
 out="$(docker run --rm --network none \
-  -v "$ROOT/dex/config.yaml:/etc/dex/aic.yaml:ro" \
+  -v "$ROOT/deploy/local/dex/config.yaml:/etc/dex/aic.yaml:ro" \
   "$DEX" dex serve --web-http-addr 256.0.0.1:1 /etc/dex/aic.yaml 2>&1 || true)"
 if grep -q 'listening (http) on 256.0.0.1:1' <<<"$out"; then
   echo "DEX config accepted (stopped at listen as intended)"
@@ -48,4 +49,4 @@ else
 fi
 
 echo "== docker compose config"
-docker compose -f "$ROOT/docker-compose.yml" config --quiet && echo "compose file valid"
+docker compose -f "$ROOT/deploy/local/compose.yaml" config --quiet && echo "compose file valid"

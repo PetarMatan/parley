@@ -24,8 +24,7 @@ parley/
 │  └─ login.mjs                 OIDC login: discovery + code flow with PKCE (PKCE convention)
 ├─ quarantine/                  make-quarantine.sh, guard.mjs (PreToolUse), templates/
 ├─ gateway/                     agentgateway config.yaml, jwks/ (generated)
-├─ dex/                         config.yaml
-├─ docker-compose.yml           agentgateway + dex
+├─ deploy/local/                compose.yaml (agentgateway + dex), dex/config.yaml
 ├─ sandbox/                     setup.sh → builds work/ (bare origin, clone-a, clone-b, mr/)
 ├─ skills/                      review-send/SKILL.md, review-handle/SKILL.md
 ├─ canaries/                    NN-name.json, run.mjs

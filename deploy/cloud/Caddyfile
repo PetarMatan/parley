@@ -1,0 +1,22 @@
+# Reverse proxy and TLS for the cloud host. Caddy obtains and renews the
+# certificates from Let's Encrypt (HTTP-01 on port 80). Every other service
+# listens on plain HTTP inside the Docker networks only.
+{
+	email {$ACME_EMAIL}
+}
+
+auth.parleylab.dev {
+	reverse_proxy keycloak:8080
+}
+
+gitlab.parleylab.dev {
+	reverse_proxy gitlab:80
+}
+
+channel.parleylab.dev {
+	# agentgateway in front of the inbox. SSE streams stay open for hours;
+	# no proxy timeouts are set here on purpose.
+	reverse_proxy agentgateway:3000 {
+		flush_interval -1
+	}
+}

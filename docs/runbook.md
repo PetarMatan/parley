@@ -157,7 +157,7 @@ Pass: B's session replies `disputed` naming the instruction, no delete or push i
 | 4 | MCP protocol revision | `grep '"@modelcontextprotocol/sdk"' plugin/package.json` shows an exact version. Start a session | `/mcp` shows `aic-inbox` connected and the channel registered |
 | 5 | Headless sessions | `cd <worktree> && claude -p "List the aic inbox" --dangerously-load-development-channels server:aic-inbox` [unconfirmed] | Whether a pushed message arrives. D25 expects the flag to be ignored with `-p`; the `SessionStart` pull still works. Out of scope for the verdict |
 | 6 | Session identity | Make a second repository: `git init "$AIC_WORK/other" && git -C "$AIC_WORK/other" remote add origin /tmp/other.git`. Install the same `.claude/settings.json` and `.mcp.json` there (copy from clone-b). Open B's session in it and B's quarantine session. A sends a finding for MR 1 | Only the quarantine session receives it. `jq '.sessions' "$AIC_WORK/inbox/store.json"` [unconfirmed store layout] shows two distinct session ids with different `repo` |
-| 7 | Event stream through the gateway | Both sessions open through `AIC_BASE_URL=http://localhost:3000`. Leave B idle for 10 minutes. Then A sends | The message still arrives. If not, raise the route stream timeout in `gateway/config.yaml`, `make down && make up`, retry. `docker compose -f docker-compose.yml logs agentgateway` shows the stream request |
+| 7 | Event stream through the gateway | Both sessions open through `AIC_BASE_URL=http://localhost:3000`. Leave B idle for 10 minutes. Then A sends | The message still arrives. If not, raise the route stream timeout in `gateway/config.yaml`, `make down && make up`, retry. `docker compose -f deploy/local/compose.yaml logs agentgateway` shows the stream request |
 | 8 | DEX token at the gateway | Day 7, section 8 | The gateway accepts a DEX token, logs the subject, and rejects an expired token |
 | 9 | Sender identity reaches the inbox | Send any finding through the gateway | `jq -c 'select(.event=="message_post") \| {sender,task_id}' "$AIC_WORK/logs/inbox.jsonl"` shows `a@example.com` on every message |
 | 10 | Sender gate | `node canaries/run.mjs --mode inbox --only 11 --repeat 1` | `403 sender_not_allowed`. `grep sender_refused "$AIC_WORK/logs/inbox.jsonl"` shows the security event |
@@ -204,7 +204,7 @@ Pass for the suite (PoC plan 5.3): zero breaches across all runs, the model-repo
    node plugin/login.mjs --checkout "$AIC_WORK/clone-b"     # [unconfirmed] arguments
    ```
 
-   The login reads the discovery document and checks its `issuer`. A browser opens; log in with b's static user from `dex/config.yaml`. The callback lands on `http://127.0.0.1:5557/callback`. The ID token is written where `.aic/identity.json` `token_file` points [unconfirmed]. The login prints the identity claim it used.
+   The login reads the discovery document and checks its `issuer`. A browser opens; log in with b's static user from `deploy/local/dex/config.yaml`. The callback lands on `http://127.0.0.1:5557/callback`. The ID token is written where `.aic/identity.json` `token_file` points [unconfirmed]. The login prints the identity claim it used.
 3. Send a message with the OIDC token through the gateway:
 
    ```bash
@@ -245,7 +245,7 @@ Before the session: the Owner switches Channels on in https://claude.ai/admin-se
 
 ```bash
 make setup                                   # fresh sandbox, or keep the current one
-sed -i '' 's/"127.0.0.1:3000:3000"/"0.0.0.0:3000:3000"/' docker-compose.yml    # expose the gateway only; the inbox stays on 127.0.0.1:7070
+sed -i '' 's/"127.0.0.1:3000:3000"/"0.0.0.0:3000:3000"/' deploy/local/compose.yaml    # expose the gateway only; the inbox stays on 127.0.0.1:7070
 make up
 AIC_WORK=$PWD/work AIC_INBOX_ADDR=127.0.0.1:7070 work/bin/aic-inbox            # own terminal
 ipconfig getifaddr en0                       # HOST_IP, give it to the colleague

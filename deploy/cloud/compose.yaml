@@ -1,0 +1,157 @@
+# Cloud host bundle for the testbed (parley-testbed.md section 3, decisions
+# T2, T3, T9). Start from this directory with `docker compose up -d` after
+# copying .env.example to .env. Only caddy publishes ports. Image tags are
+# pinned and were checked with `docker manifest inspect` on 2026-10-30.
+name: parley
+
+networks:
+  edge:      # caddy and everything it proxies
+  services:  # the gateway, the inbox, and GitLab's API side
+  ci:        # GitLab and its runner
+
+volumes:
+  caddy-data:
+  caddy-config:
+  keycloak-db:
+  gitlab-config:
+  gitlab-logs:
+  gitlab-data:
+  runner-config:
+  inbox-work:
+
+services:
+  caddy:
+    image: caddy:2.10.2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge]
+
+  keycloak-db:
+    image: postgres:17.6
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD:?set KC_DB_PASSWORD in .env}
+    volumes:
+      - keycloak-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [edge]
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.1
+    restart: unless-stopped
+    command: ["start", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?set KC_BOOTSTRAP_ADMIN_PASSWORD in .env}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      # Public URL; fixes the issuer https://auth.parleylab.dev/realms/parley in
+      # every token. Caddy terminates TLS, so HTTP is enabled behind it.
+      KC_HOSTNAME: https://auth.parleylab.dev
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      # Substituted into keycloak/realm-parley.json on import (client `gitlab`).
+      KC_GITLAB_CLIENT_SECRET: ${KC_GITLAB_CLIENT_SECRET:?set KC_GITLAB_CLIENT_SECRET in .env}
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    healthcheck:
+      # The image has no curl; the management port 9000 serves /health/ready.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    networks: [edge]
+
+  gitlab:
+    image: gitlab/gitlab-ce:18.6.0-ce.0
+    restart: unless-stopped
+    hostname: gitlab.parleylab.dev
+    shm_size: 256m
+    environment:
+      GITLAB_OMNIBUS_CONFIG: "from_file('/omnibus_config.rb')"
+      GITLAB_ROOT_PASSWORD: ${GITLAB_ROOT_PASSWORD:?set GITLAB_ROOT_PASSWORD in .env}
+      KC_GITLAB_CLIENT_SECRET: ${KC_GITLAB_CLIENT_SECRET}
+    volumes:
+      - ./gitlab/gitlab.rb:/omnibus_config.rb:ro
+      - gitlab-config:/etc/gitlab
+      - gitlab-logs:/var/log/gitlab
+      - gitlab-data:/var/opt/gitlab
+    healthcheck:
+      test: ["CMD", "/opt/gitlab/bin/gitlab-healthcheck", "--fail", "--max-time", "10"]
+      interval: 30s
+      timeout: 15s
+      retries: 20
+      start_period: 10m
+    networks: [edge, services, ci]
+
+  gitlab-runner:
+    image: gitlab/gitlab-runner:v18.6.0
+    restart: unless-stopped
+    volumes:
+      - runner-config:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      gitlab:
+        condition: service_healthy
+    networks: [ci]
+
+  agentgateway:
+    image: cr.agentgateway.dev/agentgateway:v1.7.0
+    restart: unless-stopped
+    command: ["-f", "/config/config.yaml"]
+    volumes:
+      - ./gateway/config.yaml:/config/config.yaml:ro
+    depends_on:
+      keycloak:
+        # The gateway fetches the realm's JWKS while loading its config and
+        # exits if the fetch fails, so Keycloak must be ready first.
+        condition: service_healthy
+      inbox:
+        condition: service_started
+    networks: [edge, services]
+
+  inbox:
+    build:
+      context: ../../inbox
+      dockerfile: Dockerfile
+    image: parley/inbox:local
+    restart: unless-stopped
+    environment:
+      AIC_WORK: /work
+      AIC_INBOX_ADDR: 0.0.0.0:7070
+      AIC_MAX_ROUNDS: ${AIC_MAX_ROUNDS:-5}
+      AIC_SERVICE_USERS: ${AIC_SERVICE_USERS:-promoter@parleylab.dev}
+      # Keycloak realm, audience `parley` (T4), identity from the email claim.
+      # No jwks field: the inbox reads jwks_uri from the issuer's discovery
+      # document over the public URL on first use.
+      AIC_ISSUERS: '[{"issuer":"https://auth.parleylab.dev/realms/parley","audiences":["parley"],"identity_claim":"email"}]'
+    volumes:
+      - inbox-work:/work
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7070/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [services]

@@ -26,10 +26,10 @@ setup:
 	bash $(ROOT)/sandbox/setup.sh
 
 up:
-	docker compose -f $(ROOT)/docker-compose.yml up -d
+	docker compose -f $(ROOT)/deploy/local/compose.yaml up -d
 
 down:
-	docker compose -f $(ROOT)/docker-compose.yml down
+	docker compose -f $(ROOT)/deploy/local/compose.yaml down
 
 # Removes build output only. `make reset` deletes the whole work dir.
 clean:
@@ -37,3 +37,6 @@ clean:
 
 reset:
 	bash $(ROOT)/sandbox/reset.sh
+
+# Testbed targets (testbed/Makefile) when that file exists.
+-include $(ROOT)/testbed/Makefile

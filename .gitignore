@@ -1,3 +1,16 @@
 work/
 node_modules/
 .aic/
+
+# Secrets and local settings, never committed
+.env
+*.env
+!*.env.example
+deploy/cloud/seed/users.env
+
+# Terraform working files; the lock file is committed
+testbed/terraform/.terraform/
+testbed/terraform/*.tfstate
+testbed/terraform/*.tfstate.*
+testbed/terraform/terraform.tfvars
+testbed/terraform/*.tfplan

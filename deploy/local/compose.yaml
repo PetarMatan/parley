@@ -1,7 +1,10 @@
-# agentgateway + DEX for the aic PoC. DEX is the local stand-in OIDC provider for
-# the sandbox. The inbox runs on the host (127.0.0.1:7070).
-# Start with `make up` only after `make setup` wrote $AIC_WORK/keys/jwks.json.
-name: aic
+# Local sandbox: agentgateway + DEX on one machine. DEX is the local stand-in
+# OIDC provider. The inbox runs on the host (127.0.0.1:7070). Paths are
+# relative to this file (deploy/local/); `make up` from the repository root
+# passes AIC_WORK as an absolute path. Start with `make up` only after
+# `make setup` wrote $AIC_WORK/keys/jwks.json. The shared-host bundle is in
+# deploy/cloud/.
+name: aic-local
 
 services:
   dex:
@@ -22,8 +25,8 @@ services:
     image: cr.agentgateway.dev/agentgateway:v1.7.0
     command: ["-f", "/config/config.yaml"]
     volumes:
-      - ./gateway/config.yaml:/config/config.yaml:ro
-      - ${AIC_WORK:-./work}/keys:/work/keys:ro
+      - ../../gateway/config.yaml:/config/config.yaml:ro
+      - ${AIC_WORK:-../../work}/keys:/work/keys:ro
     ports:
       - "127.0.0.1:3000:3000"
     extra_hosts:

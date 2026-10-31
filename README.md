@@ -73,7 +73,7 @@ cd parley
 make build        # Go binaries into work/bin
 make test         # Go and Node test suites
 make setup        # keys, mock tokens, a bare origin, two clones, one fake merge request
-make up           # gateway on :3000 and the local OIDC provider on :5556
+make up           # deploy/local: gateway on :3000 and the local OIDC provider on :5556
 AIC_WORK="$PWD/work" "$PWD/work/bin/aic-inbox"    # in its own terminal
 ```
 
@@ -156,7 +156,9 @@ Candidate next kinds, not built: ticket-readiness questions, deploy-verification
 | `skills/` | Skills of the review kind: `review-send`, `review-handle` |
 | `canaries/` | Twelve poisoned-message cases and their runner |
 | `gateway/` | agentgateway configuration and its validation script |
-| `dex/` | Configuration of the local stand-in OIDC provider |
+| `deploy/local/` | Compose file and DEX configuration of the local one-machine sandbox |
+| `deploy/cloud/` | Compose bundle for a shared host: reverse proxy, Keycloak, GitLab CE, agentgateway, inbox (testbed plan) |
+| `testbed/` | AWS part of the testbed: Terraform, scripts, test service, scenarios |
 | `sandbox/` | Scripts that build and reset the work directory |
 | `docs/` | Contract, runbook, conventions, gateway notes, per-stream decisions |
 
@@ -164,6 +166,9 @@ Candidate next kinds, not built: ticket-readiness questions, deploy-verification
 
 - [parley-design.md](parley-design.md): design record, risks, control layers, open questions.
 - [parley-poc.md](parley-poc.md): proof-of-concept plan, test plan, canary suite.
+- [parley-testbed.md](parley-testbed.md): plan for a testbed on real architecture: Keycloak, self-hosted GitLab, a cloud host, two laptops.
+- [deploy/cloud/README.md](deploy/cloud/README.md): the Compose bundle for a shared host and how to check each service.
+- [testbed/README.md](testbed/README.md): from nothing to a running host on AWS, and how to stop, start, and tear it down.
 - [docs/runbook.md](docs/runbook.md): step-by-step run on one machine, and with a second person.
 - [docs/contract.md](docs/contract.md): message shapes, cleaning rules, routing and state rules.
 - [inbox/openapi.yaml](inbox/openapi.yaml): HTTP API of the inbox.
@@ -193,7 +198,7 @@ The proof of concept answered its three questions: a message travels between two
 - A human-approved escalation has no path to the promoter (D36).
 - The round cap is reached by self-limiting agents, so the inbox never escalates (D40).
 
-Beyond the review kind: a second conversation kind (P20), a server-side CI sender, permission relay to a phone or chat, and A2A conformance so a non-Claude agent can join.
+Next step: a testbed on real architecture, planned in [parley-testbed.md](parley-testbed.md). Beyond the review kind: a second conversation kind (P20), a server-side CI sender, permission relay to a phone or chat, and A2A conformance so a non-Claude agent can join.
 
 ## Contributing
 

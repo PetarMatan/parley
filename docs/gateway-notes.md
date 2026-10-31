@@ -1,6 +1,6 @@
 # Gateway and DEX notes
 
-Covers `gateway/config.yaml`, `dex/config.yaml` and `docker-compose.yml`, and how spike checks 7, 8 and 9 run against them. Nothing here was run against a live inbox. Every command below is for the PoC run, not for the build.
+Covers `gateway/config.yaml`, `deploy/local/dex/config.yaml` and `deploy/local/compose.yaml`, and how spike checks 7, 8 and 9 run against them. Nothing here was run against a live inbox. Every command below is for the PoC run, not for the build.
 
 ## Topology
 
@@ -145,10 +145,10 @@ Negative control (optional, proves the token travels): set `preserveToken: false
 | `gateway/config.yaml` as a whole | `agentgateway -f … --validate-only` in the pinned image, see `gateway/validate.sh` | `Configuration is valid!` |
 | That `--validate-only` is strict | The same run with a misspelled field (`preserveTokn`), a bad enum (`strictt`) and a broken CEL expression | All three rejected with an error that names the field |
 | DEX JWKS fetch during validation | `--validate-only` fetches the JWKS URL. The script answers it with a throwaway `nc` responder named `dex` on an internal network, which serves `gateway/testdata/jwks.json` | Passes. Without the responder, validation fails with `failed to load JWKS: fetch http://dex:5556/dex/keys` |
-| Field names in `dex/config.yaml` | Compared against `cmd/dex/config.go`, `cmd/dex/serve.go` and `storage/storage.go` at tag `v2.46.1` | All fields exist. DEX's default grant list includes `password`, so the config sets `grantTypes` explicitly |
-| `dex/config.yaml` as a whole | `dex serve --web-http-addr 256.0.0.1:1` with no network. DEX parses the config, opens storage, loads the client and the passwords, creates a key, then fails at listen | Accepted. DEX ignores unknown fields, so this check is weaker than the gateway check |
+| Field names in `deploy/local/dex/config.yaml` | Compared against `cmd/dex/config.go`, `cmd/dex/serve.go` and `storage/storage.go` at tag `v2.46.1` | All fields exist. DEX's default grant list includes `password`, so the config sets `grantTypes` explicitly |
+| `deploy/local/dex/config.yaml` as a whole | `dex serve --web-http-addr 256.0.0.1:1` with no network. DEX parses the config, opens storage, loads the client and the passwords, creates a key, then fails at listen | Accepted. DEX ignores unknown fields, so this check is weaker than the gateway check |
 | bcrypt hashes | `htpasswd -vb` against `aic-poc-only` | All three match |
-| `docker-compose.yml` | `docker compose config --quiet` | Valid |
+| `deploy/local/compose.yaml` | `docker compose config --quiet` | Valid |
 | Container to host loopback | A container with `host.docker.internal:host-gateway` fetched from an `nc` listener on host `127.0.0.1:7071` | Works on this Docker Desktop |
 | Gateway user reads a `0700` keys folder | `--validate-only` with the JWKS in a `0700` folder | Works on Docker Desktop (virtiofs). On Linux Docker, uid 65532 may be refused |
 
