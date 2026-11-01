@@ -17,11 +17,18 @@ test('invalid envelopes are rejected', () => {
   assert.equal(checkEnvelope(null).ok, false);
   assert.equal(checkEnvelope(envelope({ message_id: 'm-<x>' })).ok, false);
   assert.equal(checkEnvelope(envelope({ from: 'a@b.io" evil="1' })).ok, false);
+  assert.equal(checkEnvelope(envelope({ from: 'a b' })).ok, false);
+  assert.equal(checkEnvelope(envelope({ from: '' })).ok, false);
   assert.equal(checkEnvelope(envelope({ round: 0 })).ok, false);
   assert.equal(checkEnvelope(envelope({ context_id: 'local/other!2' })).ok, false);
   const secret = checkEnvelope(envelope({}, { note: 'token: abcdefghijkl' }));
   assert.equal(secret.code, 'secret_detected');
   assert.equal(checkEnvelope(envelope({}, { schema: 'note.v1' })).ok, false);
+});
+
+test('a username sender passes', () => {
+  assert.equal(checkEnvelope(envelope({ from: 'alice' })).ok, true);
+  assert.equal(checkEnvelope(envelope({ from: 'a.b-c_d' })).ok, true);
 });
 
 test('system replies from the inbox pass', () => {

@@ -210,7 +210,7 @@ make_clone() { # <dir> <user> <branch>
   g -C "$dir" config user.name "${user%%@*}"
   mkdir -p "$dir/.aic"
   cat > "$dir/.aic/identity.json" <<EOF
-{"user":"$user","token_file":"$AIC_WORK/tokens/$user.jwt","base_url":"$AIC_BASE_URL","oidc":{"issuer":"http://localhost:5556/dex","client_id":"aic-cli"}}
+{"user":"$user","token_file":"$AIC_WORK/tokens/$user.jwt","base_url":"$AIC_BASE_URL","oidc":{"issuer":"http://localhost:5556/dex","client_id":"aic-cli","token":"id"}}
 EOF
   cat > "$dir/.aic/policy.json" <<'EOF'
 {"ceiling":{"fact":"L2","taste":"L0","product":"L0"},"max_rounds":5,"max_patch_lines":400}

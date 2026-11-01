@@ -19,6 +19,16 @@ Names: `auth.parleylab.dev`, `gitlab.parleylab.dev`, `channel.parleylab.dev`. DN
 
 Copy `.env.example` to `.env` and fill every value. Copy `seed/users.env.example` to `seed/users.env` and set a password per realm user. Neither file is committed.
 
+## Inbox settings
+
+| Variable | Value on this host | Meaning |
+|---|---|---|
+| `AIC_MR_PROVIDER` | `gitlab` | Merge requests come from the GitLab API; `local` is the file fake of the sandbox |
+| `AIC_GITLAB_URL` | `http://gitlab:80` | GitLab over the `services` network; the public URL also works |
+| `AIC_GITLAB_TOKEN` | from `.env` | Group access token on `parley-lab`, role Reporter, scope `api` (notes are posted) |
+| `AIC_ISSUERS` | Keycloak realm, audience `parley`, identity claim `preferred_username` | The identity string is the GitLab username |
+| `AIC_SERVICE_USERS` | `promoter@parleylab.dev` | Senders allowed to post notes on any merge request |
+
 ## Start order
 
 ```bash
@@ -27,13 +37,14 @@ docker compose up -d --build
 # Keycloak answers after about one minute, GitLab after five to ten.
 docker compose ps
 bash seed/keycloak-users.sh          # sets the realm users' passwords
+bash seed/gitlab-settings.sh         # once GitLab is healthy: turns web password sign-in off
 ```
 
 Checks:
 
 ```bash
 curl -fsS https://auth.parleylab.dev/realms/parley/.well-known/openid-configuration | jq .issuer
-curl -fsS https://gitlab.parleylab.dev/-/readiness
+curl -fsS -o /dev/null -w "%{http_code}\n" https://gitlab.parleylab.dev/users/sign_in   # 200; /-/readiness answers only from inside the container
 curl -fsS https://channel.parleylab.dev/healthz
 docker compose logs agentgateway --tail 20
 ```
@@ -48,4 +59,10 @@ Project `parley-lab/orders-service`, user memberships, the inbox's group access 
 
 - Keycloak substitutes `${KC_GITLAB_CLIENT_SECRET}` into the realm on import. GitLab reads the same variable, so the two sides always agree.
 - The realm file is read on every start with `--import-realm`, but Keycloak only imports a realm that does not exist yet. To apply a changed realm, delete it in the admin console or wipe the `keycloak-db` volume.
-- The inbox still uses the file-based merge request provider until the GitLab provider lands (phase 2). Its image carries git for that reason.
+- The inbox reads merge requests from GitLab (`AIC_MR_PROVIDER=gitlab`). Its image still carries git for the local provider.
+
+## Administration
+
+- Keycloak admin console: Caddy answers `/admin` only to private addresses. From your laptop run `make testbed-admin`; it opens a SOCKS tunnel through the host and a separate Chrome profile that uses it. Credentials: `KC_BOOTSTRAP_ADMIN_*` in `.env`.
+- GitLab: the sign-in page goes straight to Keycloak, and local password sign-in on the web is off (`seed/gitlab-settings.sh`). Root is used from the host only, for example `docker compose exec gitlab gitlab-rails runner '...'`, or through a personal access token created there.
+- A change to `Caddyfile` needs `caddy reload`; `deploy.sh` does it. A change to `gitlab/gitlab.rb` needs `docker compose restart gitlab` (about two minutes). A change to `gateway/config.yaml` needs `docker compose restart agentgateway`.

@@ -5,8 +5,10 @@ import { validatePayload } from './validate.mjs';
 import { STRIP_ORDER, mergeStripped } from './sanitize.mjs';
 
 const MESSAGE_ID_RE = /^m-[0-9A-Za-z_-]{1,64}$/;
-// Sender is an email from the verified token, or the inbox itself for system replies.
-const FROM_RE = /^(?:[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}|aic-inbox)$/;
+// Sender is the identity from the verified token (an email or a username,
+// contract section 3), or the inbox itself for system replies. The character
+// set is strict because the value is printed into the data frame.
+const FROM_RE = /^(?:[A-Za-z0-9._%+-]{1,64}(?:@[A-Za-z0-9.-]{1,190})?|aic-inbox)$/;
 const TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 /**

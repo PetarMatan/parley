@@ -23,11 +23,13 @@ import { checkEnvelope, channelMeta, renderMessage, HANDLING_RULE } from './lib/
 import { validateFinding, validateReply, validateNote, CATEGORIES, SEVERITIES, CLASSES, REPLY_KINDS, TASK_ID_RE } from './lib/validate.mjs';
 import { sessionInfo } from './lib/repo.mjs';
 import { authorMessageIds, isQuarantine, quarantineNotice } from './lib/hold.mjs';
+import { needsLogin, refreshIfNeeded } from './lib/refresh.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENV = process.env;
 const AIC_WORK = resolve(ENV.AIC_WORK || join(HERE, '..', 'work'));
 const BRIDGE_WATCH_MS = Number(ENV.AIC_BRIDGE_WATCH_MS) || 2000;
+const REFRESH_EVERY_MS = Number(ENV.AIC_REFRESH_EVERY_MS) || 60_000;
 
 const checkout = findCheckout();
 const log = createLogger({ component: 'aic-plugin', file: checkout ? join(checkout, '.aic', 'plugin.jsonl') : null });
@@ -366,10 +368,37 @@ async function discoverSession() {
   setInterval(() => useSession(readBridge(checkout, claudePid)?.session_id ?? null), BRIDGE_WATCH_MS).unref();
 }
 
+// The server is the one long-lived process per session, so it keeps the
+// bearer token fresh. The hooks read the token file on every call.
+let loginNoticeSent = false;
+async function refreshTick() {
+  const r = await refreshIfNeeded(identity, null, { timeoutMs: 10_000 });
+  if (r.refreshed) {
+    loginNoticeSent = false;
+    log.info('token_refreshed', { exp: r.exp, outcome: 'ok' });
+    return;
+  }
+  if (!needsLogin(r) || loginNoticeSent) return;
+  loginNoticeSent = true;
+  log.warn('token_refresh_failed', { reason: r.reason, error: r.error, outcome: 'login_required' });
+  await mcp.notification({
+    method: 'notifications/claude/channel',
+    params: {
+      content: `[aic-inbox] The login token could not be refreshed (${r.reason}). Messages stop until the person logs in again: node plugin/login.mjs --checkout ${checkout}`,
+      meta: { from: 'aic-inbox', kind: 'notice' },
+    },
+  });
+}
+
 mcp.onclose = () => {
   state.stream?.stop();
   log.info('plugin_stop');
   process.exit(0);
 };
 
-if (client) discoverSession().catch((e) => log.error('bridge_error', { error: String(e?.message ?? e) }));
+if (client) {
+  discoverSession().catch((e) => log.error('bridge_error', { error: String(e?.message ?? e) }));
+  const tick = () => refreshTick().catch((e) => log.error('token_refresh_error', { error: String(e?.message ?? e) }));
+  tick();
+  setInterval(tick, REFRESH_EVERY_MS).unref();
+}

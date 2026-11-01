@@ -6,6 +6,14 @@
 }
 
 auth.parleylab.dev {
+	# The admin console and admin API answer only to private addresses: the
+	# host itself (hairpin through the Elastic IP) and the Docker networks.
+	# Operators reach it through an SSH tunnel: testbed/scripts/admin.sh.
+	@admin {
+		path /admin /admin/*
+		not remote_ip private_ranges
+	}
+	respond @admin 403
 	reverse_proxy keycloak:8080
 }
 

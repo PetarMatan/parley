@@ -1,0 +1,36 @@
+diff --git a/internal/pricing/pricing.go b/internal/pricing/pricing.go
+index 335fa21..0f30153 100644
+--- a/internal/pricing/pricing.go
++++ b/internal/pricing/pricing.go
+@@ -27,14 +27,13 @@ type Quote struct {
+ 
+ // DiscountBasisPoints returns the discount tier for a quantity.
+ func DiscountBasisPoints(quantity int) int {
+-	switch {
+-	case quantity >= TierLargeQty:
++	if quantity >= TierLargeQty {
+ 		return LargeBasisPoints
+-	case quantity >= TierSmallQty:
++	}
++	if quantity > TierSmallQty {
+ 		return SmallBasisPoints
+-	default:
+-		return 0
+ 	}
++	return 0
+ }
+ 
+ // applyBasisPoints returns amount * bp / 10000, rounded half up.
+diff --git a/internal/pricing/pricing_test.go b/internal/pricing/pricing_test.go
+index c80b1b1..017d037 100644
+--- a/internal/pricing/pricing_test.go
++++ b/internal/pricing/pricing_test.go
+@@ -3,7 +3,7 @@ package pricing
+ import "testing"
+ 
+ func TestDiscountTiers(t *testing.T) {
+-	cases := map[int]int{1: 0, 9: 0, 11: SmallBasisPoints, 49: SmallBasisPoints, 51: LargeBasisPoints, 500: LargeBasisPoints}
++	cases := map[int]int{1: 0, 9: 0, 11: SmallBasisPoints, 12: SmallBasisPoints, 49: SmallBasisPoints, 50: LargeBasisPoints, 51: LargeBasisPoints, 500: LargeBasisPoints}
+ 	for qty, want := range cases {
+ 		if got := DiscountBasisPoints(qty); got != want {
+ 			t.Errorf("qty %d: want %d bp, got %d", qty, want, got)

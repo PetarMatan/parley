@@ -5,6 +5,7 @@ import { createLogger } from './log.mjs';
 import { findCheckout, loadIdentity } from './identity.mjs';
 import { InboxClient } from './client.mjs';
 import { findClaudePid } from './bridge.mjs';
+import { needsLogin, refreshIfNeeded } from './refresh.mjs';
 
 export async function readStdin() {
   let text = '';
@@ -26,7 +27,13 @@ export async function runHook(name, fn, { onError = () => null } = {}) {
     if (!checkout) return;
     log.setFile(join(checkout, '.aic', 'plugin.jsonl'));
     const identity = loadIdentity(checkout);
-    const client = new InboxClient(identity, { timeoutMs: Number(process.env.AIC_HOOK_TIMEOUT_MS) || 5000 });
+    const timeoutMs = Number(process.env.AIC_HOOK_TIMEOUT_MS) || 5000;
+    // A token that expired while no session was open is refreshed before the
+    // first request. One round trip when due; nothing when not.
+    const r = await refreshIfNeeded(identity, null, { timeoutMs });
+    if (r.refreshed) log.info('token_refreshed', { exp: r.exp, outcome: 'ok' });
+    else if (needsLogin(r)) log.warn('token_refresh_failed', { reason: r.reason, error: r.error, outcome: 'login_required' });
+    const client = new InboxClient(identity, { timeoutMs });
     const claudePid = Number(process.env.AIC_CLAUDE_PID) || findClaudePid() || process.ppid;
     out = await fn({ input, checkout, identity, client, log, claudePid });
   } catch (e) {

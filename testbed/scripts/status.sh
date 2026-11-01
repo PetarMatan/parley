@@ -20,7 +20,8 @@ check() { # name url expected-status
 
 say "public checks"
 check keycloak "https://auth.$DOMAIN/realms/parley/.well-known/openid-configuration" 200
-check gitlab "https://gitlab.$DOMAIN/-/readiness" 200
+check gitlab "https://gitlab.$DOMAIN/users/sign_in?auto_sign_in=false" 200
+check kc-admin "https://auth.$DOMAIN/admin/" 403
 check gateway "https://channel.$DOMAIN/" 401
 
 say "containers on $(host_ip)"

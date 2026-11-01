@@ -1,0 +1,32 @@
+diff --git a/go.mod b/go.mod
+index b589a1d..346b740 100644
+--- a/go.mod
++++ b/go.mod
+@@ -1,3 +1,5 @@
+ module gitlab.parleylab.dev/parley-lab/orders-service
+ 
+ go 1.27
++
++toolchain go1.27.2
+diff --git a/main.go b/main.go
+index 2dc43aa..44dfff7 100644
+--- a/main.go
++++ b/main.go
+@@ -12,6 +12,9 @@ import (
+ 	"gitlab.parleylab.dev/parley-lab/orders-service/internal/order"
+ )
+ 
++// version is reported at start-up so operators can match logs to builds.
++const version = "1.1.0"
++
+ func main() {
+ 	addr := os.Getenv("ADDR")
+ 	if addr == "" {
+@@ -23,6 +26,6 @@ func main() {
+ 		Handler:           api.New(store, api.DefaultTaxBasisPoints),
+ 		ReadHeaderTimeout: 5 * time.Second,
+ 	}
+-	log.Printf("orders-service listening on %s", addr)
++	log.Printf("orders-service %s listening on %s", version, addr)
+ 	log.Fatal(srv.ListenAndServe())
+ }

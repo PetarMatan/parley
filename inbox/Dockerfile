@@ -10,7 +10,8 @@ COPY internal ./internal
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/aic-inbox ./cmd/aic-inbox
 
 FROM alpine:3.22
-RUN apk add --no-cache git ca-certificates wget && adduser -D -u 10001 inbox
+RUN apk add --no-cache git ca-certificates wget && adduser -D -u 10001 inbox \
+ && mkdir -p /work && chown inbox:inbox /work
 COPY --from=build /out/aic-inbox /usr/local/bin/aic-inbox
 USER inbox
 ENV AIC_WORK=/work AIC_INBOX_ADDR=0.0.0.0:7070

@@ -30,7 +30,10 @@ runcmd:
   - systemctl enable --now docker
   - usermod -aG docker ubuntu
   # The repository that holds deploy/cloud. Secrets are copied in later over SSH.
-  - git clone --branch "${repo_ref}" "${repo_url}" /opt/parley || (git clone "${repo_url}" /opt/parley && git -C /opt/parley checkout "${repo_ref}")
+  # Best effort: works only for a public repository. deploy.sh syncs the tree
+  # over SSH in every case, so a failed clone is not an error.
+  - mkdir -p /opt/parley
+  - (git clone --branch "${repo_ref}" "${repo_url}" /opt/parley 2>/dev/null || true)
   - chown -R ubuntu:ubuntu /opt/parley
   # Marker that scripts/deploy.sh waits for.
   - install -d -m 0755 /var/lib/parley

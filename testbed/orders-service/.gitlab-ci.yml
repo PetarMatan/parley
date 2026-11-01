@@ -1,0 +1,22 @@
+# Runs the checks on every merge request and on the default branch.
+image: golang:1.27
+
+stages:
+  - check
+
+variables:
+  GOPATH: $CI_PROJECT_DIR/.go
+  GOFLAGS: -mod=mod
+
+cache:
+  key: go-mod
+  paths:
+    - .go/pkg/mod/
+
+check:
+  stage: check
+  script:
+    - make lint vet test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

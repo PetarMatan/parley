@@ -77,6 +77,7 @@ type mergeRequest struct {
 type policy struct {
 	Ceiling       map[string]string `json:"ceiling"`
 	MaxPatchLines int               `json:"max_patch_lines"`
+	TestCommand   []string          `json:"test_command,omitempty"` // overrides the detected test command
 }
 
 // Run evaluates every static check, then runs the tests and pushes only when
@@ -91,9 +92,6 @@ func Run(ctx context.Context, o Options) Result {
 func withDefaults(o Options) Options {
 	if o.Now == nil {
 		o.Now = time.Now
-	}
-	if len(o.TestCommand) == 0 {
-		o.TestCommand = []string{"npm", "test"}
 	}
 	if o.TestTimeout == 0 {
 		o.TestTimeout = 5 * time.Minute
@@ -134,6 +132,9 @@ func run(ctx context.Context, o Options) Result {
 	}
 	contextID := mr.Repo + "!" + strconv.Itoa(mr.IID)
 	pol, polErr := loadPolicy(o.PolicyFile)
+	if len(o.TestCommand) == 0 {
+		o.TestCommand = testCommandFor(o.Worktree, pol)
+	}
 
 	// 1. Authority ceiling for the task's class.
 	ok := add(CheckCeiling, func() error {
@@ -157,9 +158,15 @@ func run(ctx context.Context, o Options) Result {
 		return nil
 	}(), "")
 
-	// Fresh branch heads straight from the bare origin; the worktree's own
-	// remote config and refs are under the session's control.
+	// Fresh branch heads straight from the origin. The sandbox keeps a bare
+	// origin under the work dir; elsewhere the worktree's "origin" remote is
+	// used, with the checkout's git credential. The refs fetched here are
+	// private to the promoter; the worktree's own refs are under the session's
+	// control and never trusted.
 	origin := filepath.Join(o.Work, "origin.git")
+	if _, err := os.Stat(origin); err != nil {
+		origin = "origin"
+	}
 	srcRef, tgtRef := "refs/aic/promote/source", "refs/aic/promote/target"
 	_, fetchErr := git(ctx, o.Worktree, "fetch", "-q", "--no-tags", origin,
 		"+refs/heads/"+mr.SourceBranch+":"+srcRef, "+refs/heads/"+mr.TargetBranch+":"+tgtRef)
@@ -418,7 +425,23 @@ func scrubbedEnv(home, tmp string) []string {
 	if l := os.Getenv("LANG"); l != "" {
 		env = append(env, "LANG="+l)
 	}
+	// Go test runs offline too: caches under the temporary home, no toolchain
+	// or module download.
+	env = append(env, "GOCACHE="+filepath.Join(home, "go-build"), "GOPATH="+filepath.Join(home, "go"),
+		"GOMODCACHE="+filepath.Join(home, "go", "pkg", "mod"), "GOTOOLCHAIN=local", "GOPROXY=off", "GOFLAGS=-mod=mod")
 	return env
+}
+
+// testCommandFor is the policy's test_command, else a command chosen by the
+// repository's build files: go.mod → go test ./..., package.json → npm test.
+func testCommandFor(worktree string, pol policy) []string {
+	if len(pol.TestCommand) > 0 {
+		return pol.TestCommand
+	}
+	if _, err := os.Stat(filepath.Join(worktree, "go.mod")); err == nil {
+		return []string{"go", "test", "./..."}
+	}
+	return []string{"npm", "test"}
 }
 
 var levelRe = regexp.MustCompile(`^L([0-9])$`)

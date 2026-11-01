@@ -36,6 +36,10 @@ gitlab_rails['omniauth_enabled'] = true
 gitlab_rails['omniauth_allow_single_sign_on'] = ['openid_connect']
 gitlab_rails['omniauth_auto_link_user'] = ['openid_connect']
 gitlab_rails['omniauth_block_auto_created_users'] = false
+# The sign-in page goes straight to Keycloak. The local password form is
+# disabled as an application setting by seed/gitlab-settings.sh; root is then
+# used only from the host (gitlab-rails, gitlab-rake) or through an API token.
+gitlab_rails['omniauth_auto_sign_in_with_provider'] = 'openid_connect'
 gitlab_rails['omniauth_providers'] = [
   {
     name: 'openid_connect',

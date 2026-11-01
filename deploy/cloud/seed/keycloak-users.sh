@@ -13,7 +13,8 @@ REALM=parley
 # shellcheck disable=SC1091
 set -a; . "$HERE/../.env"; set +a
 
-kc() { docker compose -f "$HERE/../compose.yaml" exec -T keycloak /opt/keycloak/bin/kcadm.sh "$@"; }
+# </dev/null: exec -T would otherwise read the rest of users.env from the loop's stdin.
+kc() { docker compose -f "$HERE/../compose.yaml" exec -T keycloak /opt/keycloak/bin/kcadm.sh "$@" </dev/null; }
 
 kc config credentials --server http://localhost:8080 --realm master \
   --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null

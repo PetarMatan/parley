@@ -1,0 +1,5 @@
+Pricing: flatten the discount tier switch
+
+Replace the switch in DiscountBasisPoints with two early returns, which reads
+better and matches the style of the rest of the package. No behaviour change.
+Adds two more tier cases to the test table.

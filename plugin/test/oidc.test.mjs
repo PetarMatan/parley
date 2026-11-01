@@ -22,7 +22,7 @@ test('config: defaults apply and issuer/client_id are required', () => {
   const c = resolveOidcConfig({ oidc: { issuer: ISS, client_id: 'aic-cli' } });
   assert.deepEqual(c, {
     issuer: ISS, clientId: 'aic-cli', scopes: 'openid email profile', audience: undefined,
-    redirectPort: 5557, token: 'id', identityClaim: 'email',
+    redirectPort: 5557, token: 'access', identityClaim: 'email',
   });
   assert.equal(OIDC_DEFAULTS.redirectPort, 5557);
   assert.throws(() => resolveOidcConfig({ oidc: { client_id: 'x' } }), /OIDC issuer is not set: pass --issuer, set AIC_OIDC_ISSUER, or set oidc\.issuer/);

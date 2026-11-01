@@ -13,7 +13,7 @@ frontendPolicies:
   accessLog:
     add:
       intLevel: "3"        # log convention: access log lines are INFO
-      sender: jwt.email     # identity the inbox also uses (identity_claim email)
+      sender: jwt.preferred_username  # the username, the identity the inbox uses (identity_claim)
       sub: jwt.sub
       iss: jwt.iss
   http:

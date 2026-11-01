@@ -46,7 +46,7 @@ parley/
 | Bare origin | `$AIC_WORK/origin.git` |
 | Mock JWKS | `$AIC_WORK/keys/jwks.json` (gateway mounts it), private key `$AIC_WORK/keys/signing.pem` |
 | Tokens | `$AIC_WORK/tokens/<user>.jwt` |
-| Per-checkout identity | `<checkout>/.aic/identity.json` = `{"user":"b@example.com","token_file":"…","base_url":"…"}` (untracked) |
+| Per-checkout identity | `<checkout>/.aic/identity.json` = `{"user":"b@example.com","token_file":"…","base_url":"…","oidc":{…}}` (untracked). `token_file` holds the bearer token; `<token_file>.refresh` holds the provider's refresh token when one was issued, mode 0600 |
 | Session bridge | `<checkout>/.aic/sessions/<claude_pid>.json` = `{"session_id","cwd","claude_pid","ts"}` |
 | Policy | `<checkout>/.aic/policy.json` = `{"ceiling":{"fact":"L2","taste":"L0","product":"L0"},"max_rounds":5,"max_patch_lines":400}`. The promoter reads the copy `$AIC_WORK/quarantine/<iid>/policy.json`, never the worktree's |
 | Quarantine state | `$AIC_WORK/quarantine/<iid>/`: `aic-quarantine.json` (guard config), `aic-session-settings.json` (`--settings`), `policy.json`. Written by `make-quarantine.sh`, outside the session's write reach |
@@ -56,10 +56,12 @@ parley/
 
 - Mock issuer `https://aic.local/mock`, audience `aic-inbox`, RS256, `kid` `aic-mock-1`. Claims: `sub`, `email`, `name`, `iat`, `exp`. Users: `a@example.com`, `b@example.com`, `c@example.com` (outsider, not on any MR).
 - The inbox and the gateway accept RS256 JWTs from any configured OIDC issuer. Each issuer has its audiences and a JWKS source (file, URL, or the `jwks_uri` of the issuer's discovery document).
-- Identity = the issuer's configured `identity_claim`, lower-cased. Default `email`. The claim must be a non-empty string.
+- Identity = the issuer's configured `identity_claim`, lower-cased. Default `email`. The claim must be a non-empty string. Its shape is an email or a username: `[A-Za-z0-9._%+-]{1,64}` with an optional `@domain`. The receiving plugin drops an envelope whose `from` has any other character, because the value is printed into the data frame.
 - The mock issuer stays for tests and automated runs.
 - The local provider in the sandbox is DEX: issuer `http://localhost:5556/dex`, audience `aic-cli`.
 - The plugin logs in with OIDC discovery, the authorization code flow and PKCE S256, as a public client. Redirect `http://127.0.0.1:<port>/callback`, default port `5557`. Settings come from the `oidc` block of `.aic/identity.json`, env, or flags.
+- The bearer token is the access token by default (`oidc.token` `access`); `id` selects the ID token. The local DEX sandbox pins `id`.
+- Refresh: the channel server checks the token every 60 s and, less than 120 s before `exp`, posts the refresh token grant and rewrites `token_file` and `<token_file>.refresh` (rotation). The hooks do the same once before their first request. A refused refresh leaves both files as they are and the server emits one channel notice asking for a new login.
 - Gateway validates JWT and forwards it (`preserveToken`). The inbox re-validates the same token against the configured issuers. The inbox never trusts an identity header alone. Sender = the identity claim.
 
 ## 4. Messages (A2A vocabulary)
@@ -149,6 +151,10 @@ Error body for every 4xx: `{"error":{"code":"snake_case","message":"…"}}`.
 ```
 Diff files = `git --git-dir $AIC_WORK/origin.git diff --name-only <target>...<source>`, computed per request (no cache needed).
 
+### 7.1 GitLab provider (`AIC_MR_PROVIDER=gitlab`)
+
+The same `Provider` interface over the GitLab REST API v4. `<repo>` in a context id is the project path, for example `parley-lab/orders-service!7`. Identities are GitLab usernames: the API lists the author, reviewers and assignees by username and hides emails from non-admin tokens, so the token issuer's `identity_claim` must carry the username (`preferred_username` in the testbed realm). The inbox authenticates with one group or project access token (`AIC_GITLAB_TOKEN`, header `PRIVATE-TOKEN`): `read_api` reads merge requests and diffs, `api` is needed because outcome notes are posted. Diff files are every old and new path of `/merge_requests/:iid/diffs`, paginated. A merge request and its diff list are cached for 30 s per `<repo>!<iid>`; posting a note drops the entry. HTTP 404 maps to `mr_not_found`; 401 and 403 name the token in the error.
+
 ## 8. Plugin (MCP channel server `aic-inbox`)
 
 - Built on `@modelcontextprotocol/sdk` pinned to an exact 1.x version that negotiates a protocol revision older than 2026-07-28. Declares `capabilities.experimental["claude/channel"] = {}`.
@@ -166,3 +172,6 @@ Diff files = `git --git-dir $AIC_WORK/origin.git diff --name-only <target>...<so
 ## 10. Promoter (`aic-promote`)
 
 `aic-promote --worktree <path> --mr <iid> --task <task_id> [--work $AIC_WORK]` → JSON `{"ok":bool,"checks":[{"name","ok","detail"}],"pushed":"<sha>"?}`. Checks in order: policy ceiling for the task class ≥ L2 (policy from `$AIC_WORK/quarantine/<iid>/policy.json`); HEAD descends from the MR source branch head on origin; every changed file in `origin/<source>..HEAD` is in the MR diff; no blocked file; changed lines ≤ `max_patch_lines`; no secret pattern in added lines; tests pass in a clean temporary clone (`npm test` in the sandbox repo, no network, on macOS writes only in the temp dir and no reads of `$HOME` or `$AIC_WORK`; output that matches a secret pattern is withheld); fast-forward push to origin `<source>`. On success it posts a note through `POST /v1/contexts/{ctx}/notes` with the promoter's own mock identity `promoter@aic.local`, and logs to `$AIC_WORK/logs/promoter.jsonl`.
+
+Outside the sandbox (testbed decision T42): origin is the worktree's `origin` remote when `$AIC_WORK/origin.git` does not exist, pushed with the checkout's git credential; the inbox address and token come from the worktree's `.aic/identity.json` unless `AIC_BASE_URL` or `AIC_PROMOTER_TOKEN_FILE` is set, so the promoter acts as the person who runs the quarantine; the test command is the policy's `test_command`, else `go test ./...` for a repository with `go.mod`, else `npm test`.
+

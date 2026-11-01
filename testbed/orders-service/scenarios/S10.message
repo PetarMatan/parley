@@ -1,0 +1,4 @@
+Build: pin the Go toolchain and report the version
+
+Pin the toolchain in go.mod so every developer builds with the same patch
+release, and log the service version at start-up.

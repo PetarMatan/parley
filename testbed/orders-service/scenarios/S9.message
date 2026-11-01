@@ -1,0 +1,4 @@
+List: add a limit query parameter
+
+GET /orders grows without bound in the demo environment. Add ?limit=N to cap
+the number of orders returned, oldest first. Test and README updated.

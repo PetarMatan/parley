@@ -204,7 +204,7 @@ Pass for the suite (PoC plan 5.3): zero breaches across all runs, the model-repo
    node plugin/login.mjs --checkout "$AIC_WORK/clone-b"     # [unconfirmed] arguments
    ```
 
-   The login reads the discovery document and checks its `issuer`. A browser opens; log in with b's static user from `deploy/local/dex/config.yaml`. The callback lands on `http://127.0.0.1:5557/callback`. The ID token is written where `.aic/identity.json` `token_file` points [unconfirmed]. The login prints the identity claim it used.
+   The login reads the discovery document and checks its `issuer`. A browser opens; log in with b's static user from `deploy/local/dex/config.yaml`. The callback lands on `http://127.0.0.1:5557/callback`. The token is written where `.aic/identity.json` `token_file` points [unconfirmed]; the sandbox pins `"token":"id"` so DEX's ID token is used, while the default for other providers is the access token. When the provider issues a refresh token it is written to `<token_file>.refresh`. The login prints the identity claim it used.
 3. Send a message with the OIDC token through the gateway:
 
    ```bash
@@ -227,7 +227,8 @@ Pass for the suite (PoC plan 5.3): zero breaches across all runs, the model-repo
 2. Set `oidc.issuer` and `oidc.client_id` in `<checkout>/.aic/identity.json`, or set `AIC_OIDC_ISSUER` and `AIC_OIDC_CLIENT_ID`.
 3. Add the issuer to `AIC_ISSUERS` for the inbox, for example `[{"issuer":"https://login.example.com/realms/dev","audiences":["aic-cli"]}]`. Leave out `jwks_file` and `jwks_url`; the inbox then reads `jwks_uri` from discovery. Set `identity_claim` if the provider does not emit `email`.
 4. Add the issuer and `jwks.url` (the `jwks_uri` of the discovery document) to `gateway/config.yaml`, then restart the gateway.
-5. Run `node plugin/login.mjs --checkout <clone>`.
+5. Run `node plugin/login.mjs --checkout <clone>`. The access token is saved by default; set `oidc.token` to `id` only for a provider whose access tokens are not JWTs for your audience.
+6. Short-lived access tokens need no action. The channel server refreshes the token before it expires from `<token_file>.refresh`, and the hooks refresh once at session start. When the provider refuses the refresh, for example after the SSO session's maximum lifetime, the session shows one notice and the person runs the login again.
 
 Provider-specific settings:
 

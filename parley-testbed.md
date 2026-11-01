@@ -98,10 +98,12 @@ Docker networks: `edge` (proxy, Keycloak, GitLab, gateway), `services` (gateway,
 | Item | Value |
 |---|---|
 | Clients | `parley-cli`: public, PKCE S256 required, standard flow, refresh tokens on, redirect `http://127.0.0.1:5557/callback`. `gitlab`: confidential, standard flow, GitLab's callback. `parley-headless` (phase 4): public, device flow only |
-| Mappers on `parley-cli` | Audience mapper adds `parley` to the access token `aud`. Group membership mapper adds `groups` as a list of names. `email` and `email_verified` as usual |
+| Mappers on `parley-cli` | Audience mapper adds `parley` to the access token `aud`. Group membership mapper adds `groups` as a list of names. `email`, `email_verified` and `preferred_username` as usual |
+| Identity claim | `preferred_username`. The sender identity in Parley is the GitLab username, which GitLab creates from the same claim at first login (T31) |
 | Groups | `parley-users` (may use the channel), `reviewers`, `maintainers`, `security` |
 | Users | `alice` (reviewer, in `reviewers`), `bob` (author), `carol` (second reviewer, in `reviewers` and `security`), `dave` (project member, not a participant), `erin` (no project access, in `parley-users` only), `mallory` (valid account, not in `parley-users`), `ci-bot` (service account, phase 4) |
 | Sessions | SSO idle 8 h, SSO maximum 12 h, access token 5 min, refresh token rotation on |
+| Admin console | Caddy answers `/admin` only to private addresses; operators use `make testbed-admin`, an SSH SOCKS tunnel through the host (T27) |
 | Realm export | `deploy/cloud/keycloak/realm-parley.json`, imported at start. Test passwords are set by the seed script from an untracked file, never committed |
 
 GitLab logs in with the `openid_connect` provider against the same realm. GitLab's user email is the Keycloak email, so the token's `email` claim and the merge request participant are the same string with no mapping table (T2).
@@ -116,6 +118,7 @@ GitLab logs in with the `openid_connect` provider against the same realm. GitLab
 | Runner | One Docker-executor runner on network `ci`, registered by the seed script |
 | Group and project | Group `parley-lab`, project `orders-service` (T14) |
 | Memberships | `alice`, `carol`: Maintainer. `bob`, `dave`: Developer. `erin`, `mallory`: none |
+| Local passwords | Web sign-in with a password is off for every account, root included (`seed/gitlab-settings.sh`); the sign-in page redirects to Keycloak. Root is used from the host or through a personal access token (T28) |
 | Inbox credential | Group access token on `parley-lab`, role Reporter, scope `read_api`, stored only on the host as an inbox environment variable (T5) |
 | Merge requests | Created by the seed script from branches with planted defects, one per scenario in section 9. Reviewer and assignee set per scenario |
 
@@ -128,7 +131,7 @@ These are the only code changes the testbed needs. Everything else is configurat
 | Component | Change | Why |
 |---|---|---|
 | inbox | A `GitLab` provider behind the existing `mr` interface: merge request by `<repo>!<iid>`, author, reviewers, assignees, source and target branch, diff paths; visibility check by the project membership of the sender's email | Replaces the file fake (T2, T5, T6) |
-| inbox | Issuer entry for Keycloak: discovery, audience `parley`, `identity_claim` `email` | T3, T4 |
+| inbox | Issuer entry for Keycloak: discovery, audience `parley`, `identity_claim` `preferred_username` | T3, T4, T31 |
 | inbox | Optional group policy: a required group per finding class in `.aic/policy.json`, checked against the `groups` claim | T7, off by default |
 | plugin | Default `token` becomes `access`; the login stores the refresh token next to the access token with mode 0600 | T4, T8 |
 | plugin | The channel server refreshes the access token two minutes before `exp` and rewrites the token file; hooks keep reading the file | T8 |
@@ -146,9 +149,10 @@ The refresh happens in the channel server because it is the one long-lived proce
 |---|---|---|
 | Instance | `t3.xlarge`, 4 vCPU, 16 GB, 80 GB gp3 | GitLab CE alone needs 4 GB; Keycloak, the runner and builds need headroom |
 | Address | Elastic IP | DNS records survive stop and start |
+| SSH | Port 22 open to one address, `admin_cidr` in `terraform.tfvars`. The owner's address is dynamic; when it changes, edit the value and run `make testbed-apply` (T30). The public sites on 443 do not depend on it |
 | DNS | Route 53 hosted zone for `<domain>`; `A` records for `auth`, `gitlab`, `channel` | Managed from Terraform (T10, T11) |
 | Certificates | Caddy as the reverse proxy; Let's Encrypt with HTTP-01 | Zero certificate handling in the other services |
-| Boot | cloud-init: Docker, Compose, clone of the `deploy/cloud/` bundle, `docker compose up -d` | One command from Terraform to a running host |
+| Boot | cloud-init: Docker, Compose, git, jq. `deploy.sh` then syncs the working tree to `/opt/parley` with `rsync --inplace` over SSH and runs `docker compose up -d`; the boot-time clone is best effort because the repository is private (T23, T29) | One `apply` and one `deploy` from nothing to a running host |
 | Secrets | A `.env` on the host written by the seed step from an untracked local file; never committed | |
 | State | Terraform state local at first; move to an S3 bucket if a second person needs to apply | |
 
@@ -202,9 +206,9 @@ The planted defects live on branches, one per scenario. Each branch has one merg
 | Phase | Deliverable | Done when |
 |---|---|---|
 | 0 | Domain bought, Route 53 zone live, AWS account and credentials ready. Done 2026-10-30: `parleylab.dev` registered from the CLI, profile `parley` (IAM user `parley-admin`, region `eu-north-1`, see section 7) | `dig auth.<domain>` returns the Elastic IP |
-| 1 | `testbed/terraform` applies; `deploy/cloud/` runs; Keycloak and GitLab reachable on HTTPS; GitLab logs in through Keycloak; realm and users seeded | `alice` logs in to GitLab with her Keycloak password |
-| 2 | Code changes of section 6; local test suites green; the DEX sandbox still runs from `deploy/local/` | `make test` green; a login against `auth.<domain>` writes an access token with `aud` `parley` |
-| 3 | `orders-service` seeded with its merge requests; S1 to S12 run from two laptops | Each scenario's outcome recorded in the runbook with the message ids from the inbox log |
+| 1 | `testbed/terraform` applies; `deploy/cloud/` runs; Keycloak and GitLab reachable on HTTPS; GitLab logs in through Keycloak; realm and users seeded. Built and hardened 2026-11-01 (T23 to T30): host `i-0269a7ec2aee4274a`, all public checks pass, Keycloak admin console closed to the Internet, GitLab web passwords off. The exit test is still to be run by the owner | `alice` logs in to GitLab with her Keycloak password |
+| 2 | Code changes of section 6; local test suites green; the DEX sandbox still runs from `deploy/local/`. Code done 2026-11-01 (T31, T33 to T35): access token default, refresh, GitLab provider; Go 9 packages, plugin 155, quarantine 18, canaries 24 green. Live login and refresh against Keycloak still to be exercised | `make test` green; a login against `auth.<domain>` writes an access token with `aud` `parley` |
+| 3 | `orders-service` seeded with its merge requests; S1 to S12 run from two laptops. Scripts ready 2026-11-01 (T36, T37): `make testbed-root-token`, `make testbed-seed-gitlab`, `make testbed-checkout DIR=<clone> USER=<name>`; none run yet | Each scenario's outcome recorded in the runbook with the message ids from the inbox log |
 | 4 | Headless agent containers with the device flow; S1 to S12 scripted | `make e2e` runs the catalogue without a person |
 
 ---
@@ -214,3 +218,4 @@ The planted defects live on branches, one per scenario. Each branch has one merg
 - Whether the promoter should push with the person's credential or with a per-task deploy token minted by the inbox. The person's credential is the proof of concept behaviour and stays for phase 3.
 - Whether GitLab group membership should be synced from Keycloak groups. Not in CE in a way this plan relies on; memberships are set by the seed script.
 - The content and id shape of the first non-review conversation kind for S14.
+- Instance size. `t3.xlarge` is kept for the first setup (owner, 2026-11-01). Measure memory and CPU credits over a full scenario session, then decide whether `t3.large` with swap is enough. The type is one Terraform variable; the change is a stop and start.

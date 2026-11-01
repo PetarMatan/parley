@@ -1,12 +1,12 @@
-// Generic OIDC helpers for login.mjs: config resolution, discovery document
-// validation, token selection and claim lookup. Pure functions, except
-// fetchDiscovery, which does one GET.
+// Generic OIDC helpers for login.mjs and refresh.mjs: config resolution,
+// discovery document validation, token selection, the refresh request and
+// claim lookup. Pure functions, except fetchDiscovery, which does one GET.
 import { decodeJwtPayload } from './pkce.mjs';
 
 export const OIDC_DEFAULTS = Object.freeze({
   scopes: 'openid email profile',
   redirectPort: 5557,
-  token: 'id',
+  token: 'access',
   identityClaim: 'email',
   audience: undefined,
 });
@@ -113,13 +113,14 @@ export function isJwt(s) {
 
 /**
  * Picks the token to save from a token endpoint response. Checks the ID token
- * nonce whenever an ID token is present. Returns the token and its claims.
+ * nonce whenever an ID token is present, except with checkNonce false (a
+ * refresh response carries no nonce). Returns the token and its claims.
  */
-export function selectToken(resp, which, nonce) {
+export function selectToken(resp, which, nonce, { checkNonce = true } = {}) {
   if (!resp || typeof resp !== 'object') throw new Error('token endpoint: response is not a JSON object');
   if (resp.id_token !== undefined) {
     if (!isJwt(resp.id_token)) throw new Error('token endpoint: id_token is not a JWT');
-    if (decodeJwtPayload(resp.id_token).nonce !== nonce) throw new Error('ID token nonce does not match');
+    if (checkNonce && decodeJwtPayload(resp.id_token).nonce !== nonce) throw new Error('ID token nonce does not match');
   }
   const field = which === 'access' ? 'access_token' : 'id_token';
   const token = resp[field];
@@ -136,4 +137,20 @@ export function identityFromClaims(claims, claim) {
   const v = claims?.[claim];
   if (typeof v !== 'string' || !v.trim()) return null;
   return v.toLowerCase(); // same rule as the inbox: lower-cased, not trimmed
+}
+
+/**
+ * The refresh token grant (RFC 6749 section 6) for a public client: the form
+ * body and the headers of the POST to the token endpoint.
+ */
+export function refreshRequest({ tokenEndpoint, clientId, refreshToken }) {
+  if (!tokenEndpoint || !clientId || !refreshToken) throw new Error('refresh: tokenEndpoint, clientId and refreshToken are required');
+  return {
+    url: tokenEndpoint,
+    init: {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: clientId }).toString(),
+    },
+  };
 }

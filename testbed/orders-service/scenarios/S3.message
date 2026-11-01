@@ -1,0 +1,5 @@
+Validation: cap quantities above the limit instead of rejecting
+
+Big customers paste quantities above 1000 and get a 400. Cap the quantity at
+MaxQuantity on create; the warehouse splits large orders anyway. The README
+limit text is unchanged for now.

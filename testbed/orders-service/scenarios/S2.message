@@ -1,0 +1,6 @@
+Cancel: make a repeated cancel idempotent
+
+A client that times out on POST /orders/{id}/cancel retries, and the retry hit
+409 because the first call had succeeded. Cancel now returns 200 with the
+cancelled order on every call. ErrAlreadyCancelled is removed, the tests and
+the README contract are updated.

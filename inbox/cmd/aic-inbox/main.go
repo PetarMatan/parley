@@ -17,6 +17,10 @@
 //	                   provider of the sandbox (DEX, JWKS URL)
 //	AIC_MAX_ROUNDS     round cap, default 5
 //	AIC_SERVICE_USERS  comma list allowed to post notes on any MR, default promoter@aic.local
+//	AIC_MR_PROVIDER    "local" (default: $AIC_WORK/mr/<iid>.json and a bare repo) or
+//	                   "gitlab" (GitLab REST API; <repo> is the project path)
+//	AIC_GITLAB_URL     GitLab base URL, e.g. https://gitlab.example.com (gitlab only)
+//	AIC_GITLAB_TOKEN   group or project access token; read_api to read, api to post notes
 package main
 
 import (
@@ -99,7 +103,21 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("store: %w", err)
 	}
-	srv, err := api.New(api.Config{MaxRounds: maxRounds, ServiceSenders: service}, st, mr.NewLocal(work), ver, log)
+	var mrs mr.Provider
+	provider := env("AIC_MR_PROVIDER", "local")
+	switch provider {
+	case "local":
+		mrs = mr.NewLocal(work)
+	case "gitlab":
+		gitlabURL, gitlabToken := os.Getenv("AIC_GITLAB_URL"), os.Getenv("AIC_GITLAB_TOKEN")
+		if gitlabURL == "" || gitlabToken == "" {
+			return mr.ErrGitLabConfig
+		}
+		mrs = mr.NewGitLab(gitlabURL, gitlabToken, nil)
+	default:
+		return fmt.Errorf("AIC_MR_PROVIDER must be local or gitlab, got %q", provider)
+	}
+	srv, err := api.New(api.Config{MaxRounds: maxRounds, ServiceSenders: service}, st, mrs, ver, log)
 	if err != nil {
 		return err
 	}
@@ -122,7 +140,7 @@ func run() error {
 	for i, c := range issuers {
 		iss[i] = c.Issuer
 	}
-	log.Info(logx.Fields{"event": "listening", "addr": addr, "work": work, "max_rounds": maxRounds, "issuers": iss})
+	log.Info(logx.Fields{"event": "listening", "addr": addr, "work": work, "max_rounds": maxRounds, "issuers": iss, "mr_provider": provider})
 	if err := hs.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

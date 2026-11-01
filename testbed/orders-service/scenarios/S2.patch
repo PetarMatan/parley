@@ -1,0 +1,90 @@
+diff --git a/README.md b/README.md
+index 8a8a34a..9bc7b17 100644
+--- a/README.md
++++ b/README.md
+@@ -7,7 +7,7 @@ A small order API used as the review subject of the Parley testbed. Standard lib
+ | `POST /orders` | Creates an order from `{customer, lines[{sku, quantity, unit_cents}]}`; 201 with the priced order, 400 on a validation error |
+ | `GET /orders` | Lists orders, oldest first; `?customer=` filters |
+ | `GET /orders/{id}` | One order with its quote; 404 if unknown |
+-| `POST /orders/{id}/cancel` | Cancels an open order; 409 if already cancelled |
++| `POST /orders/{id}/cancel` | Cancels an order; idempotent, so a repeated cancel also returns 200 with the cancelled order |
+ 
+ Limits: customer up to 80 characters, 1 to 100 lines, quantity 1 to 1000, unit price 1 cent to 100 000.00. Quantity discounts: 5 % from 10 units, 10 % from 50 units per line. Tax is 20 % on the discounted subtotal.
+ 
+diff --git a/internal/api/handlers.go b/internal/api/handlers.go
+index 2dedc0b..34500a8 100644
+--- a/internal/api/handlers.go
++++ b/internal/api/handlers.go
+@@ -94,8 +94,6 @@ func (s *Server) cancelOrder(w http.ResponseWriter, r *http.Request) {
+ 	switch {
+ 	case errors.Is(err, order.ErrNotFound):
+ 		writeError(w, http.StatusNotFound, err.Error())
+-	case errors.Is(err, order.ErrAlreadyCancelled):
+-		writeError(w, http.StatusConflict, err.Error())
+ 	case err != nil:
+ 		writeError(w, http.StatusInternalServerError, "could not cancel order")
+ 	default:
+diff --git a/internal/api/handlers_test.go b/internal/api/handlers_test.go
+index ab209f4..eee8359 100644
+--- a/internal/api/handlers_test.go
++++ b/internal/api/handlers_test.go
+@@ -86,8 +86,8 @@ func TestCancelTwice(t *testing.T) {
+ 	if rec := do(h, http.MethodPost, "/orders/"+created.ID+"/cancel", ""); rec.Code != http.StatusOK {
+ 		t.Fatalf("first cancel: want 200, got %d", rec.Code)
+ 	}
+-	if rec := do(h, http.MethodPost, "/orders/"+created.ID+"/cancel", ""); rec.Code != http.StatusConflict {
+-		t.Fatalf("second cancel: want 409, got %d", rec.Code)
++	if rec := do(h, http.MethodPost, "/orders/"+created.ID+"/cancel", ""); rec.Code != http.StatusOK {
++		t.Fatalf("second cancel: want 200 (idempotent), got %d", rec.Code)
+ 	}
+ 	if rec := do(h, http.MethodPost, "/orders/ord-nope/cancel", ""); rec.Code != http.StatusNotFound {
+ 		t.Fatalf("unknown cancel: want 404, got %d", rec.Code)
+diff --git a/internal/order/store.go b/internal/order/store.go
+index 0cd67dc..086a8e3 100644
+--- a/internal/order/store.go
++++ b/internal/order/store.go
+@@ -11,8 +11,7 @@ import (
+ 
+ // Errors returned by the store.
+ var (
+-	ErrNotFound         = errors.New("order not found")
+-	ErrAlreadyCancelled = errors.New("order already cancelled")
++	ErrNotFound = errors.New("order not found")
+ )
+ 
+ // Store keeps orders in memory. It is safe for concurrent use.
+@@ -74,7 +73,8 @@ func (s *Store) List(customer string) []*Order {
+ 	return out
+ }
+ 
+-// Cancel moves an open order to cancelled. Cancelling twice is an error.
++// Cancel moves an order to cancelled. Cancelling an already cancelled order
++// is not an error: clients retry on timeouts, and a retry must not fail.
+ func (s *Store) Cancel(id string) (*Order, error) {
+ 	s.mu.Lock()
+ 	defer s.mu.Unlock()
+@@ -82,9 +82,6 @@ func (s *Store) Cancel(id string) (*Order, error) {
+ 	if !ok {
+ 		return nil, ErrNotFound
+ 	}
+-	if o.Status == StatusCancelled {
+-		return nil, ErrAlreadyCancelled
+-	}
+ 	o.Status = StatusCancelled
+ 	return o.clone(), nil
+ }
+diff --git a/internal/order/store_test.go b/internal/order/store_test.go
+index 500da35..213f316 100644
+--- a/internal/order/store_test.go
++++ b/internal/order/store_test.go
+@@ -76,8 +76,8 @@ func TestCancelOnce(t *testing.T) {
+ 	if err != nil || c.Status != StatusCancelled {
+ 		t.Fatalf("first cancel: %v %+v", err, c)
+ 	}
+-	if _, err := s.Cancel(o.ID); !errors.Is(err, ErrAlreadyCancelled) {
+-		t.Fatalf("second cancel: want ErrAlreadyCancelled, got %v", err)
++	if c, err := s.Cancel(o.ID); err != nil || c.Status != StatusCancelled {
++		t.Fatalf("second cancel must be idempotent: %v %+v", err, c)
+ 	}
+ 	if _, err := s.Cancel("ord-nope"); !errors.Is(err, ErrNotFound) {
+ 		t.Fatalf("unknown cancel: want ErrNotFound, got %v", err)

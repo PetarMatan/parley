@@ -1,0 +1,4 @@
+# Parley per-checkout files: identity, token path, policy, quarantine marker
+.aic/
+# Claude Code local settings (PARLEY_ROOT for this machine)
+.claude/settings.local.json

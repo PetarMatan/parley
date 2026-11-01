@@ -1,0 +1,73 @@
+diff --git a/internal/order/store.go b/internal/order/store.go
+index 0cd67dc..a736eb1 100644
+--- a/internal/order/store.go
++++ b/internal/order/store.go
+@@ -33,13 +33,21 @@ func (s *Store) Create(r NewOrderRequest) (*Order, error) {
+ 	if err := Validate(r); err != nil {
+ 		return nil, err
+ 	}
++	lines := append([]Line(nil), r.Lines...)
++	for i := range lines {
++		// Quantities above the limit are capped; the warehouse splits large
++		// orders anyway.
++		if lines[i].Quantity > MaxQuantity {
++			lines[i].Quantity = MaxQuantity
++		}
++	}
+ 	s.mu.Lock()
+ 	defer s.mu.Unlock()
+ 	s.seq++
+ 	o := &Order{
+ 		ID:        fmt.Sprintf("ord-%06d", s.seq),
+ 		Customer:  strings.TrimSpace(r.Customer),
+-		Lines:     append([]Line(nil), r.Lines...),
++		Lines:     lines,
+ 		Status:    StatusOpen,
+ 		CreatedAt: s.now().UTC(),
+ 	}
+diff --git a/internal/order/store_test.go b/internal/order/store_test.go
+index 500da35..08b4761 100644
+--- a/internal/order/store_test.go
++++ b/internal/order/store_test.go
+@@ -83,3 +83,13 @@ func TestCancelOnce(t *testing.T) {
+ 		t.Fatalf("unknown cancel: want ErrNotFound, got %v", err)
+ 	}
+ }
++
++func TestCreateCapsQuantity(t *testing.T) {
++	s := NewStore()
++	r := validRequest()
++	r.Lines[0].Quantity = MaxQuantity + 500
++	o, err := s.Create(r)
++	if err != nil || o.Lines[0].Quantity != MaxQuantity {
++		t.Fatalf("want capped to %d, got %v %+v", MaxQuantity, err, o)
++	}
++}
+diff --git a/internal/order/validate.go b/internal/order/validate.go
+index b64162c..e99c8e7 100644
+--- a/internal/order/validate.go
++++ b/internal/order/validate.go
+@@ -45,8 +45,8 @@ func Validate(r NewOrderRequest) error {
+ 			return fmt.Errorf("%w: line %d: sku %s repeated", ErrInvalid, i, l.SKU)
+ 		}
+ 		seen[l.SKU] = true
+-		if l.Quantity < 1 || l.Quantity > MaxQuantity {
+-			return fmt.Errorf("%w: line %d: quantity must be 1 to %d", ErrInvalid, i, MaxQuantity)
++		if l.Quantity < 1 {
++			return fmt.Errorf("%w: line %d: quantity must be at least 1", ErrInvalid, i)
+ 		}
+ 		if l.UnitCents < 1 || l.UnitCents > MaxUnitCents {
+ 			return fmt.Errorf("%w: line %d: unit_cents must be 1 to %d", ErrInvalid, i, MaxUnitCents)
+diff --git a/internal/order/validate_test.go b/internal/order/validate_test.go
+index 33d8a06..a0261c6 100644
+--- a/internal/order/validate_test.go
++++ b/internal/order/validate_test.go
+@@ -18,7 +18,7 @@ func TestValidateLimits(t *testing.T) {
+ 		{"no lines", func(r *NewOrderRequest) { r.Lines = nil }, false},
+ 		{"bad sku", func(r *NewOrderRequest) { r.Lines[0].SKU = "bolt m8" }, false},
+ 		{"repeated sku", func(r *NewOrderRequest) { r.Lines = append(r.Lines, r.Lines[0]) }, false},
+-		{"quantity too high", func(r *NewOrderRequest) { r.Lines[0].Quantity = MaxQuantity + 1 }, false},
++		{"quantity above limit is accepted", func(r *NewOrderRequest) { r.Lines[0].Quantity = MaxQuantity + 1 }, true},
+ 		{"quantity at limit", func(r *NewOrderRequest) { r.Lines[0].Quantity = MaxQuantity }, true},
+ 		{"zero price", func(r *NewOrderRequest) { r.Lines[0].UnitCents = 0 }, false},
+ 	}

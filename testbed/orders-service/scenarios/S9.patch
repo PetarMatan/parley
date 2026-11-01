@@ -1,0 +1,57 @@
+diff --git a/README.md b/README.md
+index 8a8a34a..8ab2bb9 100644
+--- a/README.md
++++ b/README.md
+@@ -5,7 +5,7 @@ A small order API used as the review subject of the Parley testbed. Standard lib
+ | Call | Effect |
+ |---|---|
+ | `POST /orders` | Creates an order from `{customer, lines[{sku, quantity, unit_cents}]}`; 201 with the priced order, 400 on a validation error |
+-| `GET /orders` | Lists orders, oldest first; `?customer=` filters |
++| `GET /orders` | Lists orders, oldest first; `?customer=` filters, `?limit=` caps the count |
+ | `GET /orders/{id}` | One order with its quote; 404 if unknown |
+ | `POST /orders/{id}/cancel` | Cancels an open order; 409 if already cancelled |
+ 
+diff --git a/internal/api/handlers.go b/internal/api/handlers.go
+index 2dedc0b..6bc1d63 100644
+--- a/internal/api/handlers.go
++++ b/internal/api/handlers.go
+@@ -5,6 +5,7 @@ import (
+ 	"encoding/json"
+ 	"errors"
+ 	"net/http"
++	"strconv"
+ 
+ 	"gitlab.parleylab.dev/parley-lab/orders-service/internal/order"
+ 	"gitlab.parleylab.dev/parley-lab/orders-service/internal/pricing"
+@@ -72,7 +73,14 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
+ }
+ 
+ func (s *Server) listOrders(w http.ResponseWriter, r *http.Request) {
+-	orders := s.store.List(r.URL.Query().Get("customer"))
++	q := r.URL.Query()
++	orders := s.store.List(q.Get("customer"))
++	if l := q.Get("limit"); l != "" {
++		n, _ := strconv.Atoi(l)
++		if n < len(orders) {
++			orders = orders[:n]
++		}
++	}
+ 	out := make([]orderResponse, len(orders))
+ 	for i, o := range orders {
+ 		out[i] = s.respond(o)
+diff --git a/internal/api/handlers_test.go b/internal/api/handlers_test.go
+index ab209f4..726ccc4 100644
+--- a/internal/api/handlers_test.go
++++ b/internal/api/handlers_test.go
+@@ -77,6 +77,11 @@ func TestListFilters(t *testing.T) {
+ 	if len(all) != 2 || len(some) != 1 || some[0].Customer != "globex" {
+ 		t.Fatalf("unexpected lists: all=%d some=%d", len(all), len(some))
+ 	}
++	var first []orderResponse
++	json.Unmarshal(do(h, http.MethodGet, "/orders?limit=1", "").Body.Bytes(), &first)
++	if len(first) != 1 || first[0].Customer != "acme" {
++		t.Fatalf("unexpected limited list: %+v", first)
++	}
+ }
+ 
+ func TestCancelTwice(t *testing.T) {

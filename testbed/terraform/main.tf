@@ -135,7 +135,7 @@ resource "aws_instance" "host" {
 
   lifecycle {
     # A new AMI in the SSM parameter must not replace a host that holds GitLab data.
-    ignore_changes = [ami]
+    ignore_changes = [ami, user_data]
   }
 }
 

@@ -4,16 +4,18 @@
 // http://127.0.0.1:<port>/callback. Works with any standard provider; the
 // sandbox uses the local DEX container. Settings come from flags, env, or the
 // oidc block of .aic/identity.json (see lib/oidc.mjs). Writes the selected token
-// (ID token by default) to the token_file of the checkout's .aic/identity.json.
+// (access token by default) to the token_file of the checkout's .aic/identity.json
+// and the refresh token, when the provider issues one, to <token_file>.refresh.
+// The channel server and the hooks refresh from that file (lib/refresh.mjs).
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { findCheckout, loadIdentity } from './lib/identity.mjs';
 import { authorizationUrl, challengeS256, createVerifier, b64url } from './lib/pkce.mjs';
 import { fetchDiscovery, identityFromClaims, resolveOidcConfig, selectToken } from './lib/oidc.mjs';
+import { refreshFile, writeAtomic } from './lib/refresh.mjs';
 
 const USAGE = `usage: node plugin/login.mjs [--checkout <dir>] [--no-open]
          [--issuer <url>] [--client-id <id>] [--scopes "<s1 s2>"] [--audience <aud>]
@@ -22,7 +24,7 @@ const USAGE = `usage: node plugin/login.mjs [--checkout <dir>] [--no-open]
 Precedence: flag > env (AIC_OIDC_ISSUER, AIC_OIDC_CLIENT_ID, AIC_OIDC_SCOPES,
 AIC_OIDC_AUDIENCE, AIC_OIDC_REDIRECT_PORT, AIC_OIDC_TOKEN, AIC_IDENTITY_CLAIM)
 > the oidc block of <checkout>/.aic/identity.json > defaults
-(scopes "openid email profile", port 5557, token id, identity claim email).
+(scopes "openid email profile", port 5557, token access, identity claim email).
 issuer and client id have no default.
 `;
 
@@ -85,12 +87,15 @@ async function main() {
   say(`identity claim "${cfg.identityClaim}" = ${who ?? '(missing)'}`);
   if (who !== identity.user.toLowerCase()) say(`warning: token ${cfg.identityClaim} ${who} differs from identity user ${identity.user}`);
 
-  mkdirSync(dirname(identity.tokenFile), { recursive: true });
-  const tmp = `${identity.tokenFile}.${process.pid}.tmp`;
-  writeFileSync(tmp, token + '\n', { mode: 0o600 });
-  renameSync(tmp, identity.tokenFile);
+  writeAtomic(identity.tokenFile, token + '\n');
   const exp = Number.isFinite(claims.exp) ? new Date(claims.exp * 1000).toISOString() : 'unknown';
   say(`${field} for ${who} written to ${identity.tokenFile} (expires ${exp})`);
+  if (typeof tok.refresh_token === 'string' && tok.refresh_token) {
+    writeAtomic(refreshFile(identity.tokenFile), tok.refresh_token + '\n');
+    say(`refresh token written to ${refreshFile(identity.tokenFile)}; the session refreshes the token before it expires`);
+  } else {
+    say('no refresh token issued; log in again when the token expires');
+  }
 }
 
 /** Serves the loopback callback once, opens the browser, resolves the code. */

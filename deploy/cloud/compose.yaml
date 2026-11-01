@@ -143,10 +143,18 @@ services:
       AIC_INBOX_ADDR: 0.0.0.0:7070
       AIC_MAX_ROUNDS: ${AIC_MAX_ROUNDS:-5}
       AIC_SERVICE_USERS: ${AIC_SERVICE_USERS:-promoter@parleylab.dev}
-      # Keycloak realm, audience `parley` (T4), identity from the email claim.
-      # No jwks field: the inbox reads jwks_uri from the issuer's discovery
-      # document over the public URL on first use.
-      AIC_ISSUERS: '[{"issuer":"https://auth.parleylab.dev/realms/parley","audiences":["parley"],"identity_claim":"email"}]'
+      # Keycloak realm, audience `parley` (T4). Identity is the username
+      # (preferred_username), the same string GitLab shows for merge request
+      # participants. No jwks field: the inbox reads jwks_uri from the issuer's
+      # discovery document over the public URL on first use.
+      AIC_ISSUERS: '[{"issuer":"https://auth.parleylab.dev/realms/parley","audiences":["parley"],"identity_claim":"preferred_username"}]'
+      # Merge requests from GitLab (phase 2). The inbox reaches GitLab over the
+      # shared `services` network; the API answers on the container's port 80
+      # regardless of external_url. The public URL works too:
+      #   AIC_GITLAB_URL: https://gitlab.parleylab.dev
+      AIC_MR_PROVIDER: gitlab
+      AIC_GITLAB_URL: ${AIC_GITLAB_URL:-http://gitlab:80}
+      AIC_GITLAB_TOKEN: ${AIC_GITLAB_TOKEN}
     volumes:
       - inbox-work:/work
     healthcheck:

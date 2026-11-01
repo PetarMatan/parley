@@ -14,3 +14,4 @@ testbed/terraform/*.tfstate
 testbed/terraform/*.tfstate.*
 testbed/terraform/terraform.tfvars
 testbed/terraform/*.tfplan
+testbed/.gitlab-root-token
