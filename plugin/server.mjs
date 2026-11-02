@@ -19,7 +19,7 @@ import { createLogger } from './lib/log.mjs';
 import { findCheckout, loadIdentity } from './lib/identity.mjs';
 import { InboxClient, keepStream } from './lib/client.mjs';
 import { findClaudePid, readBridge, waitForBridge } from './lib/bridge.mjs';
-import { checkEnvelope, channelMeta, renderMessage, HANDLING_RULE } from './lib/render.mjs';
+import { checkEnvelope, channelMeta, renderMessage, HANDLING_RULE, TOOLS_HINT } from './lib/render.mjs';
 import { validateFinding, validateReply, validateNote, CATEGORIES, SEVERITIES, CLASSES, REPLY_KINDS, TASK_ID_RE } from './lib/validate.mjs';
 import { sessionInfo } from './lib/repo.mjs';
 import { authorMessageIds, isQuarantine, quarantineNotice } from './lib/hold.mjs';
@@ -52,6 +52,7 @@ const IN_QUARANTINE = isQuarantine(checkout);
 
 const state = {
   sessionId: null,
+  channels: true,
   stream: null,
   emitted: new Set(), // message ids already pushed into the session
   dropped: new Set(), // message ids that failed validation (logged once)
@@ -287,13 +288,20 @@ function logDrop(env, c) {
   log.warn('message_dropped', { message_id: id, error_code: c.code, error: c.message, outcome: 'dropped' });
 }
 
+// Probe for D41: whether Claude Code tells a server that it registered it as
+// a channel. Compare this line between a start with and without the flag.
+mcp.oninitialized = () => {
+  log.info('client_initialized', { client: mcp.getClientVersion(), capabilities: mcp.getClientCapabilities(), argv_ppid: process.ppid });
+};
+
 await mcp.connect(new StdioServerTransport());
 
 function deliver(msg, readOnly = false) {
   const body = renderMessage(msg);
   return mcp.notification({
     method: 'notifications/claude/channel',
-    params: { content: readOnly ? `${quarantineNotice([msg])}\n${body}` : body, meta: channelMeta(msg) },
+    // A read-only message only briefs the person, so it names no tools.
+    params: { content: readOnly ? `${quarantineNotice([msg])}\n${body}` : `${TOOLS_HINT}\n${body}`, meta: channelMeta(msg) },
   });
 }
 
@@ -344,16 +352,27 @@ async function handleEvent(ev) {
   }
 }
 
-function useSession(sessionId) {
-  if (state.sessionId === sessionId) return;
+// bridge: the record the SessionStart hook wrote, or null. Without a channel
+// the session drops channel events silently, so the server opens no stream and
+// messages stay queued for the next SessionStart pull (D41). A record without
+// the field (older hook) counts as a channel session.
+function useSession(bridge) {
+  const sessionId = bridge?.session_id ?? null;
+  const channels = bridge?.channels !== false;
+  if (state.sessionId === sessionId && state.channels === channels) return;
   state.stream?.stop();
   state.stream = null;
   state.sessionId = sessionId;
+  state.channels = channels;
   if (!sessionId) {
     log.info('session_cleared');
     return;
   }
-  log.info('session_found', { session_id: sessionId });
+  log.info('session_found', { session_id: sessionId, channels });
+  if (!channels) {
+    log.warn('stream_skipped', { session_id: sessionId, outcome: 'no_channel' });
+    return;
+  }
   state.stream = keepStream(client, sessionId, { onEvent: onStreamEvent, log });
 }
 
@@ -362,10 +381,10 @@ async function discoverSession() {
   log.info('bridge_wait', { claude_pid: claudePid });
   const first = await waitForBridge(checkout, claudePid, { timeoutMs: 30_000 });
   if (!first) log.warn('bridge_missing', { claude_pid: claudePid, outcome: 'pull_only' });
-  useSession(first?.session_id ?? null);
+  useSession(first);
   // /clear and resume start a new session id under the same Claude process;
   // SessionEnd removes the file. Follow both.
-  setInterval(() => useSession(readBridge(checkout, claudePid)?.session_id ?? null), BRIDGE_WATCH_MS).unref();
+  setInterval(() => useSession(readBridge(checkout, claudePid)), BRIDGE_WATCH_MS).unref();
 }
 
 // The server is the one long-lived process per session, so it keeps the

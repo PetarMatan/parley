@@ -55,6 +55,8 @@ test('channel server: capability, tools, push, re-clean, ack, drop', async () =>
     message_id: good.message_id, context_id: 'local/shop!1', task_id: 'f-1a2b3c4d', from: 'a@example.com', kind: 'finding', round: '1',
   });
   assert.match(n.params.content, /Sender: a@example\.com/);
+  assert.ok(n.params.content.startsWith('[aic-inbox] To act on this message, load the inbox tools with ToolSearch'));
+  assert.match(n.params.content, /select:mcp__aic-inbox__inbox_reply,/);
   assert.ok(!n.params.content.includes('channel source'));
   await until(() => stub.calls.find((c) => c.url === `/v1/messages/${good.message_id}/ack`));
   const ack = stub.calls.find((c) => c.url.endsWith('/ack'));
@@ -132,6 +134,7 @@ test('channel server in a normal checkout emits author messages read-only and ne
   const n = await until(() => notes.find((x) => x.method === 'notifications/claude/channel'));
   assert.match(n.params.content, /wait for the quarantine session/);
   assert.match(n.params.content, /quarantine\/make-quarantine\.sh 1/);
+  assert.ok(!n.params.content.includes('ToolSearch'), 'a read-only brief names no tools');
   assert.equal(n.params.meta.message_id, finding.message_id);
   await until(() => readFileSync(join(checkout, '.aic', 'plugin.jsonl'), 'utf8').includes('"event":"message_held"'));
 
@@ -142,6 +145,22 @@ test('channel server in a normal checkout emits author messages read-only and ne
   assert.match(ack.content[0].text, /quarantine_required/);
   assert.ok(!stub.calls.some((c) => c.url.endsWith('/ack')), 'no ack left the normal checkout');
 
+  await client.close();
+  await stub.close();
+});
+
+test('channel server opens no stream for a session without a channel', async () => {
+  let streams = 0;
+  const stub = await startStub({ onStream: () => { streams++; } });
+  const checkout = makeCheckout(stub.baseUrl);
+  markQuarantine(checkout);
+  writeBridge(checkout, PID, { sessionId: 'sess-nc', cwd: checkout, channels: false });
+  const { client } = await connect(checkout, join(checkout, 'work'));
+  await until(() => readFileSync(join(checkout, '.aic', 'plugin.jsonl'), 'utf8').includes('"event":"stream_skipped"'));
+  // A restart with the flag under the same process (bridge rewritten) opens it.
+  writeBridge(checkout, PID, { sessionId: 'sess-nc', cwd: checkout, channels: true });
+  await until(() => streams === 1);
+  assert.ok(!stub.calls.some((c) => c.url.endsWith('/ack')));
   await client.close();
   await stub.close();
 });

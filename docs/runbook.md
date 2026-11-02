@@ -114,8 +114,8 @@ Note: a normal B session (in `clone-b`) may stay open during this step. The inbo
 1. Exit B's session (`/exit`).
 2. In A's session, send one more finding (or `node canaries/run.mjs --mode inbox --only 4 --repeat 1 --no-drain`).
 3. Check it waits: `curl -s -H "Authorization: Bearer $(tok b)" "$AIC_BASE_URL/v1/inbox?repo=local/shop&branch=feature/discount" | jq '.messages[] | {message_id,state}'` shows `queued`.
-4. Start B's quarantine session again (section 4).
-5. Observe: the first turn shows the finding as `SessionStart` context framed as untrusted data. The message state becomes `acked`.
+4. Start B's quarantine session again with its `start-session.sh` (section 4). Do not type anything.
+5. Observe: B starts a turn by itself. The `SessionStart` context holds only the note "1 message(s) arrived while this session was closed", and the finding arrives as a channel event framed as untrusted data. The message state becomes `acked`. Without the channel flag (plain `claude`), the hook injects the finding as context instead, the model sees it with the first prompt, and the person sees a notice that the session has no channel (D41).
 
 ### Step 3: dispute and the round limit
 

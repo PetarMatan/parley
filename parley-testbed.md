@@ -219,3 +219,18 @@ The planted defects live on branches, one per scenario. Each branch has one merg
 - Whether GitLab group membership should be synced from Keycloak groups. Not in CE in a way this plan relies on; memberships are set by the seed script.
 - The content and id shape of the first non-review conversation kind for S14.
 - Instance size. `t3.xlarge` is kept for the first setup (owner, 2026-11-01). Measure memory and CPU credits over a full scenario session, then decide whether `t3.large` with swap is enough. The type is one Terraform variable; the change is a stop and start.
+
+---
+
+## 12. Next steps (agreed 2026-11-02)
+
+In order. Each builds on the one before; the first three need nothing new to be written.
+
+1. Close the pull-path gap (D39): a message that waited while the session was closed must start a turn at session start, as a live message does. Done 2026-11-02 (D41).
+2. Run the rest of the catalogue on the one-laptop setup: S2, S3, S4 to S6, S7, S8, S9, S10, S12. Record each outcome in the runbook with the message ids.
+3. Second laptop, second person: sleep and reconnect, a closed laptop receiving later, two people watching their own sessions.
+4. Phase 4, headless agents in containers with the device-code login, so the catalogue runs from a script.
+5. The second conversation kind (P20): ticket readiness or deploy verification.
+6. Hardening found by the testbed: group policy as the second authority layer (T7), promoter pushes only the task's commits (D34), a human-approved escalation reaching the promoter (D36).
+
+At the start of every session: check the public address against the SSH rule, and read `free -m` on the host during a run to settle the instance size.

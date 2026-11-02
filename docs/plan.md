@@ -26,7 +26,7 @@ The foundation runs first because the two validators and the promoter share its 
 | PoC question | Built by | Evidence when run |
 |---|---|---|
 | Live delivery (step 1) | plugin, inbox | B's quarantine session shows the finding within seconds |
-| Closed session (step 2, spike 2) | hooks, inbox queue | `SessionStart` context contains the finding; message state `acked` |
+| Closed session (step 2, spike 2) | hooks, plugin stream, inbox queue | B's session starts a turn without a prompt; the finding arrives as a channel event; message state `acked` (D41) |
 | Dispute and round limit (step 3, spike 11) | inbox round cap, skills | 6th message `409 round_limit`, MR notes file says so |
 | Poisoned finding (step 4, canaries) | rules, guard, promoter, skills | `guard.jsonl`, `promoter.jsonl`, origin branch sha |
 | Gateway identity and streams (spikes 7–9) | gateway, inbox auth | gateway access log, inbox log `sender` field |

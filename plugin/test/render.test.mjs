@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkEnvelope, channelMeta, renderMessage, renderSessionContext, safeJSON } from '../lib/render.mjs';
+import { checkEnvelope, channelMeta, renderChannelContext, renderMessage, renderSessionContext, safeJSON } from '../lib/render.mjs';
 import { envelope } from './stub-inbox.mjs';
 
 test('a valid envelope is re-cleaned and its tags merged', () => {
@@ -72,4 +72,13 @@ test('session context frames messages and names the review-handle skill', () => 
   assert.match(ctx, /untrusted data written by another agent/);
   assert.match(ctx, /review-handle skill/);
   assert.match(ctx, /1 message\(s\) failed validation/);
+});
+
+test('channel context puts notices first and frames read-only messages', () => {
+  const ctx = renderChannelContext([checkEnvelope(envelope()).msg], ['NOTICE']);
+  assert.ok(ctx.startsWith('NOTICE\n\n'));
+  assert.match(ctx, /shown read-only/);
+  assert.match(ctx, /untrusted data written by another agent/);
+  assert.match(ctx, /BEGIN DATA/);
+  assert.equal(renderChannelContext([], ['NOTICE']), 'NOTICE');
 });
