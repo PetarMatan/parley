@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -164,4 +164,86 @@ test('login.mjs: --help and a mismatched discovery issuer fail cleanly', async (
   assert.equal(mismatch.code, 1);
   assert.match(mismatch.out, /discovery: issuer "https:\/\/someone-else\.example" does not match/);
   assert.equal(existsSync(join(dir, 'tok.jwt')), false);
+});
+
+// A provider with discovery and a token endpoint that issues an access token
+// for `user`; the test plays the browser against the login's callback.
+async function loginProvider(user) {
+  const srv = createServer((req, res) => {
+    const iss = `http://127.0.0.1:${srv.address().port}/realm`;
+    if (req.url === '/realm/.well-known/openid-configuration') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        issuer: iss, authorization_endpoint: `${iss}/auth`, token_endpoint: `${iss}/token`, code_challenge_methods_supported: ['S256'],
+      }));
+      return;
+    }
+    if (req.url === '/realm/token' && req.method === 'POST') {
+      const exp = Math.floor(Date.now() / 1000) + 300;
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        access_token: jwt({ preferred_username: user, exp }), refresh_token: 'r1',
+      }));
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  return { srv, issuer: `http://127.0.0.1:${srv.address().port}/realm` };
+}
+
+function startLogin(dir, issuer, port) {
+  const p = spawn(process.execPath, [LOGIN, '--checkout', dir, '--no-open', '--issuer', issuer, '--client-id', 'aic-cli',
+    '--port', String(port), '--identity-claim', 'preferred_username'], { env: { ...process.env, AIC_OIDC_ISSUER: '', AIC_OIDC_CLIENT_ID: '' } });
+  let out = '';
+  const url = new Promise((resolve) => p.stderr.on('data', (d) => {
+    out += d;
+    const m = /open (\S+)/.exec(out);
+    if (m) resolve(new URL(m[1]));
+  }));
+  const done = new Promise((resolve) => p.on('close', (code) => resolve({ code, out })));
+  return { url, done };
+}
+
+const freePort = () => new Promise((resolve) => {
+  const s = createServer().listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); });
+});
+
+function checkoutFor(user) {
+  const dir = mkdtempSync(join(tmpdir(), 'aic-login-'));
+  mkdirSync(join(dir, '.aic'));
+  writeFileSync(join(dir, '.aic', 'identity.json'), JSON.stringify({ user, token_file: join(dir, 'tok.jwt') }));
+  return dir;
+}
+
+test('login.mjs: a callback from an older attempt is refused and the login goes on', async (t) => {
+  const { srv, issuer } = await loginProvider('bob');
+  t.after(() => srv.close());
+  const dir = checkoutFor('bob');
+  const port = await freePort();
+  const { url, done } = startLogin(dir, issuer, port);
+  const state = (await url).searchParams.get('state');
+  const stale = await fetch(`http://127.0.0.1:${port}/callback?state=old-tab&code=x`);
+  assert.equal(stale.status, 400);
+  assert.match(await stale.text(), /login link is old/);
+  const ok = await fetch(`http://127.0.0.1:${port}/callback?state=${encodeURIComponent(state)}&code=c1`);
+  assert.equal(ok.status, 200);
+  const r = await done;
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /ignored a callback from an older login attempt/);
+  assert.equal(readFileSync(join(dir, 'tok.jwt.refresh'), 'utf8'), 'r1\n');
+});
+
+test('login.mjs: a token for another user is refused and the old token stays', async (t) => {
+  const { srv, issuer } = await loginProvider('alice');
+  t.after(() => srv.close());
+  const dir = checkoutFor('bob');
+  writeFileSync(join(dir, 'tok.jwt'), 'bob-old\n');
+  const port = await freePort();
+  const { url, done } = startLogin(dir, issuer, port);
+  const state = (await url).searchParams.get('state');
+  await fetch(`http://127.0.0.1:${port}/callback?state=${encodeURIComponent(state)}&code=c1`);
+  const r = await done;
+  assert.equal(r.code, 1);
+  assert.match(r.out, /signed in as alice, but this checkout belongs to bob\. Nothing was written/);
+  assert.equal(readFileSync(join(dir, 'tok.jwt'), 'utf8'), 'bob-old\n');
+  assert.equal(existsSync(join(dir, 'tok.jwt.refresh')), false);
 });

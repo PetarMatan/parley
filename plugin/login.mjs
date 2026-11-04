@@ -85,7 +85,12 @@ async function main() {
   const { token, field, claims } = selectToken(tok, cfg.token, nonce);
   const who = identityFromClaims(claims, cfg.identityClaim);
   say(`identity claim "${cfg.identityClaim}" = ${who ?? '(missing)'}`);
-  if (who !== identity.user.toLowerCase()) say(`warning: token ${cfg.identityClaim} ${who} differs from identity user ${identity.user}`);
+  // A token for another person would make every session in this checkout act
+  // as that person. A browser that is still signed in as someone else causes it.
+  if (who !== identity.user.toLowerCase()) {
+    throw new Error(`signed in as ${who ?? `(no ${cfg.identityClaim} claim)`}, but this checkout belongs to ${identity.user}. ` +
+      `Nothing was written. Sign in as ${identity.user} (a private window avoids a provider session of another user) and run the login again.`);
+  }
 
   writeAtomic(identity.tokenFile, token + '\n');
   const exp = Number.isFinite(claims.exp) ? new Date(claims.exp * 1000).toISOString() : 'unknown';
@@ -98,7 +103,7 @@ async function main() {
   }
 }
 
-/** Serves the loopback callback once, opens the browser, resolves the code. */
+/** Serves the loopback callback until one carries this state, opens the browser, resolves the code. */
 function waitForCode(url, state, port, redirectUri) {
   return new Promise((resolveP, reject) => {
     const server = createServer((req, res) => {
@@ -110,7 +115,13 @@ function waitForCode(url, state, port, redirectUri) {
         clearTimeout(timer);
         err ? reject(err) : resolveP(code);
       };
-      if (u.searchParams.get('state') !== state) return finish(400, 'State mismatch.', new Error('state mismatch'));
+      // A callback for another login attempt, such as a restored old tab, is
+      // refused but does not end this one.
+      if (u.searchParams.get('state') !== state) {
+        res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' }).end('This login link is old. Use the newest link the login printed.');
+        say('ignored a callback from an older login attempt; still waiting');
+        return;
+      }
       if (u.searchParams.get('error')) return finish(400, 'Login failed.', new Error(u.searchParams.get('error')));
       const code = u.searchParams.get('code');
       if (!code) return finish(400, 'No code.', new Error('callback without code'));
