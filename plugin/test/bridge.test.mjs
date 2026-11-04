@@ -33,7 +33,7 @@ test('bridge file round trip', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aic-bridge-'));
   assert.equal(readBridge(dir, 4242), null);
   const w = writeBridge(dir, 4242, { sessionId: 'sess-1', cwd: dir });
-  assert.deepEqual(Object.keys(w), ['session_id', 'cwd', 'claude_pid', 'channels', 'ts']);
+  assert.deepEqual(Object.keys(w), ['session_id', 'cwd', 'claude_pid', 'channels', 'transcript_path', 'ts']);
   assert.match(w.ts, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
   assert.deepEqual(readBridge(dir, 4242), w);
   assert.equal(statSync(bridgePath(dir, 4242)).mode & 0o777, 0o600);

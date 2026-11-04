@@ -14,7 +14,8 @@ await runHook('cwd-changed', async ({ input, checkout, client, log, claudePid })
   await client.registerSession(input.session_id, info);
   const prev = readBridge(checkout, claudePid);
   const channels = prev ? prev.channels !== false : detectChannelMode(claudePid).channels;
-  writeBridge(checkout, claudePid, { sessionId: input.session_id, cwd, channels });
+  const transcriptPath = prev?.transcript_path ?? input.transcript_path ?? null;
+  writeBridge(checkout, claudePid, { sessionId: input.session_id, cwd, channels, transcriptPath });
   log.info('session_registered', { session_id: input.session_id, repo: info.repo, branch: info.branch, cwd, outcome: 'ok' });
   return null;
 });

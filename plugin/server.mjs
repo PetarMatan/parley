@@ -18,7 +18,8 @@ import { fileURLToPath } from 'node:url';
 import { createLogger } from './lib/log.mjs';
 import { findCheckout, loadIdentity } from './lib/identity.mjs';
 import { InboxClient, keepStream } from './lib/client.mjs';
-import { findClaudePid, readBridge, waitForBridge } from './lib/bridge.mjs';
+import { findClaudePid, readBridge, waitForBridge, writeChannelHealth } from './lib/bridge.mjs';
+import { TranscriptWatcher } from './lib/receipt.mjs';
 import { checkEnvelope, channelMeta, renderMessage, HANDLING_RULE, TOOLS_HINT } from './lib/render.mjs';
 import { validateFinding, validateReply, validateNote, CATEGORIES, SEVERITIES, CLASSES, REPLY_KINDS, TASK_ID_RE } from './lib/validate.mjs';
 import { sessionInfo } from './lib/repo.mjs';
@@ -30,6 +31,10 @@ const ENV = process.env;
 const AIC_WORK = resolve(ENV.AIC_WORK || join(HERE, '..', 'work'));
 const BRIDGE_WATCH_MS = Number(ENV.AIC_BRIDGE_WATCH_MS) || 2000;
 const REFRESH_EVERY_MS = Number(ENV.AIC_REFRESH_EVERY_MS) || 60_000;
+const RECEIPT_POLL_MS = Number(ENV.AIC_RECEIPT_POLL_MS) || 500;
+// An emitted event without an enqueue record by then means the session has no
+// working channel (D42).
+const RECEIPT_TIMEOUT_MS = Number(ENV.AIC_RECEIPT_TIMEOUT_MS) || 15_000;
 
 const checkout = findCheckout();
 const log = createLogger({ component: 'aic-plugin', file: checkout ? join(checkout, '.aic', 'plugin.jsonl') : null });
@@ -54,6 +59,10 @@ const state = {
   sessionId: null,
   channels: true,
   stream: null,
+  watcher: null, // TranscriptWatcher of this session, or null
+  pending: new Map(), // message id -> {fields, at, enqueued}: emitted, no receipt yet
+  delivered: new Set(), // message ids with a receipt (acked, or ack to retry)
+  health: null, // last channel health written to .aic/channel.json
   emitted: new Set(), // message ids already pushed into the session
   dropped: new Set(), // message ids that failed validation (logged once)
   held: new Set(), // message ids for the MR author, read-only outside a quarantine
@@ -337,19 +346,67 @@ async function handleEvent(ev) {
     log.info('message_held', { ...fields, outcome: 'held_for_quarantine' });
     return;
   }
-  if (!state.emitted.has(msg.message_id)) {
-    await deliver(msg);
-    state.emitted.add(msg.message_id);
-    remember(msg.context_id, msg.task_id);
-    log.info('message_emitted', { ...fields, injection_score: msg.tags.injection_score, stripped: msg.tags.stripped, outcome: 'emitted' });
-  }
-  // Ack after emit. A redelivered message (ack failed before) is only acked again.
+  // A redelivery after a failed ack: the receipt is already there.
+  if (state.delivered.has(msg.message_id)) return ackDelivered(msg.message_id, fields);
+  if (state.pending.has(msg.message_id)) return;
+  await deliver(msg);
+  state.emitted.add(msg.message_id);
+  remember(msg.context_id, msg.task_id);
+  // Acked only on a receipt in the transcript (D42); see receiptTick.
+  state.pending.set(msg.message_id, { fields, at: Date.now(), enqueued: false });
+  log.info('message_emitted', { ...fields, injection_score: msg.tags.injection_score, stripped: msg.tags.stripped, outcome: 'emitted' });
+}
+
+async function ackDelivered(id, fields) {
   try {
-    await client.ack(msg.message_id, state.sessionId);
+    await client.ack(id, state.sessionId);
     log.info('message_acked', { ...fields, outcome: 'acked' });
   } catch (e) {
     log.warn('message_ack_failed', { ...fields, outcome: 'error', error_code: e.code, error: String(e.message) });
   }
+}
+
+function setHealth(status) {
+  if (state.health === status) return;
+  state.health = status;
+  try {
+    writeChannelHealth(checkout, { status, sessionId: state.sessionId });
+  } catch (e) {
+    log.warn('channel_health_write_failed', { error: String(e.message) });
+  }
+}
+
+// Reads the transcript for receipts. enqueued: the event arrived, the channel
+// works; keep waiting, also through a long turn. delivered: the event entered
+// the conversation; ack. No enqueue in time: no working channel. The stream
+// closes, the inbox returns the pushed messages to the queue, and the next
+// SessionStart pulls them because .aic/channel.json says dead.
+function receiptTick() {
+  if (!state.pending.size && !state.watcher) return;
+  for (const r of state.watcher?.scan() ?? []) {
+    setHealth('ok');
+    const p = state.pending.get(r.id);
+    if (!p) continue;
+    if (r.kind === 'enqueued') {
+      if (!p.enqueued) log.info('message_enqueued', { ...p.fields, outcome: 'enqueued' });
+      p.enqueued = true;
+      continue;
+    }
+    state.pending.delete(r.id);
+    state.delivered.add(r.id);
+    log.info('message_delivered', { ...p.fields, ms: Date.now() - p.at, outcome: 'delivered' });
+    chain = chain.then(() => ackDelivered(r.id, p.fields));
+  }
+  const now = Date.now();
+  const late = [...state.pending].filter(([, p]) => !p.enqueued && now - p.at > RECEIPT_TIMEOUT_MS).map(([id]) => id);
+  if (!late.length) return;
+  log.warn('receipt_missing', {
+    session_id: state.sessionId, message_ids: late, transcript: Boolean(state.watcher), outcome: 'no_channel',
+  });
+  setHealth('dead');
+  state.pending.clear();
+  state.stream?.stop();
+  state.stream = null;
 }
 
 // bridge: the record the SessionStart hook wrote, or null. Without a channel
@@ -364,11 +421,16 @@ function useSession(bridge) {
   state.stream = null;
   state.sessionId = sessionId;
   state.channels = channels;
+  // A new session id is a new transcript; unreceipted emits of the old one
+  // went back to the queue when its stream stopped.
+  state.pending.clear();
+  state.health = null;
+  state.watcher = bridge?.transcript_path ? new TranscriptWatcher(bridge.transcript_path) : null;
   if (!sessionId) {
     log.info('session_cleared');
     return;
   }
-  log.info('session_found', { session_id: sessionId, channels });
+  log.info('session_found', { session_id: sessionId, channels, transcript: Boolean(state.watcher) });
   if (!channels) {
     log.warn('stream_skipped', { session_id: sessionId, outcome: 'no_channel' });
     return;
@@ -420,4 +482,7 @@ if (client) {
   const tick = () => refreshTick().catch((e) => log.error('token_refresh_error', { error: String(e?.message ?? e) }));
   tick();
   setInterval(tick, REFRESH_EVERY_MS).unref();
+  setInterval(() => {
+    try { receiptTick(); } catch (e) { log.error('receipt_error', { error: String(e?.message ?? e) }); }
+  }, RECEIPT_POLL_MS).unref();
 }

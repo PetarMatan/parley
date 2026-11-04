@@ -109,6 +109,12 @@ export const NO_CHANNEL_NOTICE =
   'aic-inbox: this session was started without the aic-inbox channel, so messages do not arrive while it runs. ' +
   'Waiting messages are shown at session start only. Restart Claude with the channel flag to receive them live.';
 
+/** SessionStart notice when the flag is set but the last channel session here delivered nothing (D42). */
+export const CHANNEL_DEAD_NOTICE =
+  'aic-inbox: the last session in this checkout had the channel flag, but Claude Code did not deliver its messages ' +
+  '(no receipt in the transcript; check the channelsEnabled policy, the channel allowlist, or the development-channel dialog). ' +
+  'Waiting messages are shown at session start. New messages are tried on the channel again.';
+
 /** additionalContext for the SessionStart pull path (no channel). */
 /** notices: extra lines placed after the head, e.g. the quarantine notice. */
 export function renderSessionContext(msgs, dropped = 0, notices = []) {

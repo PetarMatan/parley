@@ -85,11 +85,11 @@ export function bridgePath(checkout, claudePid) {
 }
 
 /** Writes the bridge file atomically (temp file and rename). */
-export function writeBridge(checkout, claudePid, { sessionId, cwd, channels = true }) {
+export function writeBridge(checkout, claudePid, { sessionId, cwd, channels = true, transcriptPath = null }) {
   const file = bridgePath(checkout, claudePid);
   mkdirSync(join(checkout, '.aic', 'sessions'), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
-  const body = { session_id: sessionId, cwd, claude_pid: claudePid, channels, ts: new Date().toISOString() };
+  const body = { session_id: sessionId, cwd, claude_pid: claudePid, channels, transcript_path: transcriptPath, ts: new Date().toISOString() };
   writeFileSync(tmp, JSON.stringify(body) + '\n', { mode: 0o600 });
   renameSync(tmp, file);
   return body;
@@ -100,6 +100,29 @@ export function readBridge(checkout, claudePid) {
   try {
     const b = JSON.parse(readFileSync(bridgePath(checkout, claudePid), 'utf8'));
     return typeof b.session_id === 'string' && b.session_id ? b : null;
+  } catch {
+    return null;
+  }
+}
+
+// .aic/channel.json: whether the last channel session in this checkout got
+// receipts (D42). The channel server writes it; SessionStart reads it.
+export function channelHealthPath(checkout) {
+  return join(checkout, '.aic', 'channel.json');
+}
+
+export function writeChannelHealth(checkout, { status, sessionId }) {
+  const file = channelHealthPath(checkout);
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify({ status, session_id: sessionId, ts: new Date().toISOString() }) + '\n', { mode: 0o600 });
+  renameSync(tmp, file);
+}
+
+/** 'ok', 'dead', or null when unknown. */
+export function readChannelHealth(checkout) {
+  try {
+    const s = JSON.parse(readFileSync(channelHealthPath(checkout), 'utf8')).status;
+    return s === 'ok' || s === 'dead' ? s : null;
   } catch {
     return null;
   }

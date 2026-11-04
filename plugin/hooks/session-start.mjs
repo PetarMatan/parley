@@ -8,12 +8,15 @@
 // - No channel (no flag, or -p with the development flag): pull, ack, and
 //   inject the messages as framed untrusted data. Channel events would be
 //   dropped, and the channel server opens no stream.
+// - Channel flag present, but the last channel session here got no receipts
+//   (.aic/channel.json says dead, D42): pull as without a channel, tell the
+//   person, and still let the stream run, so live messages test it again.
 // Outside a quarantine, messages for the MR author are never pushed here: both
 // paths show them read-only and never ack them.
 import { runHook } from '../lib/hook.mjs';
-import { detectChannelMode, writeBridge } from '../lib/bridge.mjs';
+import { detectChannelMode, readChannelHealth, writeBridge } from '../lib/bridge.mjs';
 import { sessionInfo } from '../lib/repo.mjs';
-import { checkEnvelope, renderChannelContext, renderSessionContext, waitingNotice, NO_CHANNEL_NOTICE } from '../lib/render.mjs';
+import { checkEnvelope, renderChannelContext, renderSessionContext, waitingNotice, CHANNEL_DEAD_NOTICE, NO_CHANNEL_NOTICE } from '../lib/render.mjs';
 import { authorMessageIds, quarantineNotice } from '../lib/hold.mjs';
 
 await runHook('session-start', async ({ input, checkout, identity, client, log, claudePid }) => {
@@ -24,21 +27,23 @@ await runHook('session-start', async ({ input, checkout, identity, client, log, 
   try {
     const info = sessionInfo(checkout, cwd);
     await client.registerSession(sessionId, info);
-    log.info('session_registered', { session_id: sessionId, repo: info.repo, branch: info.branch, source: input.source, channels: mode.channels, outcome: 'ok' });
+    log.info('session_registered', { session_id: sessionId, repo: info.repo, branch: info.branch, source: input.source, channels: mode.channels, transcript: Boolean(input.transcript_path), outcome: 'ok' });
 
     const { messages = [] } = (await client.listInbox(info.repo, info.branch)) ?? {};
-    const out = mode.channels
+    const dead = mode.channels && readChannelHealth(checkout) === 'dead';
+    const out = mode.channels && !dead
       ? await channelSession(messages, { sessionId, info, identity, client, log })
       : await pullSession(messages, { sessionId, info, identity, client, log });
     // A person who forgot the flag is told once per launch; a -p run
     // (canaries) is not, and neither is /clear or a compaction.
     const launch = !input.source || input.source === 'startup' || input.source === 'resume';
-    if (!mode.channels && !mode.print && launch) return { ...out, systemMessage: NO_CHANNEL_NOTICE };
+    const notice = dead ? CHANNEL_DEAD_NOTICE : !mode.channels && !mode.print ? NO_CHANNEL_NOTICE : null;
+    if (notice && launch) return { ...out, systemMessage: notice };
     return out;
   } finally {
     // Written last: the channel server waits for this file before it opens
     // its stream, so in the pull path the stream never sees what was acked.
-    writeBridge(checkout, claudePid, { sessionId, cwd, channels: mode.channels });
+    writeBridge(checkout, claudePid, { sessionId, cwd, channels: mode.channels, transcriptPath: input.transcript_path ?? null });
   }
 }, {
   onError: (message) => ({ systemMessage: `aic-inbox: inbox not reached at session start (${message}). Messages may be waiting.` }),

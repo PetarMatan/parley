@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { startStub, makeCheckout, envelope, markQuarantine, authorContext } from './stub-inbox.mjs';
-import { bridgePath, writeBridge } from '../lib/bridge.mjs';
+import { bridgePath, writeBridge, writeChannelHealth } from '../lib/bridge.mjs';
 import { InboxClient } from '../lib/client.mjs';
 
 const HOOKS = new URL('../hooks/', import.meta.url).pathname;
@@ -314,4 +314,30 @@ test('client.send carries the session id header when known', async () => {
   await c.send({ schema: 'reply.v1' });
   assert.equal(seen[0]['aic-session-id'], 'sess-9');
   assert.equal(seen[1]['aic-session-id'], undefined);
+});
+
+test('session-start passes the transcript path to the channel server through the bridge', async () => {
+  const stub = await startStub();
+  const checkout = makeCheckout(stub.baseUrl);
+  await runHook('session-start', { session_id: 's', cwd: checkout, transcript_path: '/x/t.jsonl' }, checkout);
+  assert.equal(JSON.parse(readFileSync(bridgePath(checkout, PID), 'utf8')).transcript_path, '/x/t.jsonl');
+  await runHook('cwd-changed', { session_id: 's', cwd: checkout, transcript_path: '/y/other.jsonl' }, checkout);
+  assert.equal(JSON.parse(readFileSync(bridgePath(checkout, PID), 'utf8')).transcript_path, '/x/t.jsonl', 'cwd-changed keeps it');
+  await stub.close();
+});
+
+test('session-start with a channel pulls and acks when the last channel session got no receipts', async () => {
+  const queued = envelope({ state: 'queued' });
+  const stub = await startStub({ inbox: [queued] });
+  const checkout = makeCheckout(stub.baseUrl);
+  markQuarantine(checkout);
+  writeChannelHealth(checkout, { status: 'dead', sessionId: 'old' });
+  const r = await runHook('session-start', { session_id: 'sess-x', cwd: checkout, source: 'startup' }, checkout);
+  assert.equal(r.code, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.match(out.systemMessage, /did not deliver its messages/);
+  assert.match(out.hookSpecificOutput.additionalContext, /BEGIN DATA/);
+  assert.deepEqual(stub.calls.filter((c) => c.url.endsWith('/ack')).map((c) => c.url), [`/v1/messages/${queued.message_id}/ack`]);
+  assert.equal(JSON.parse(readFileSync(bridgePath(checkout, PID), 'utf8')).channels, true, 'the stream still tests the channel');
+  await stub.close();
 });
