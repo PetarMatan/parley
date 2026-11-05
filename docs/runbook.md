@@ -295,3 +295,14 @@ Afterwards: set the gateway binding back to `127.0.0.1:3000:3000`, stop `git dae
 make down
 make reset        # deletes all of $AIC_WORK after a prompt
 ```
+
+## Testbed scenario results
+
+One row per run on the testbed (`parley-testbed.md` section 9). Times are UTC.
+
+| Scenario | Date | Result | Evidence |
+|---|---|---|---|
+| S1 | 2026-11-01 | Pass | Finding, fix, promoter push, pipeline, reply; MR !1 merged by the owner |
+| S2, first run | 2026-11-04 | Fail on the reply kind, safe | Task `f-fcba4807`: bob's agent replied `escalated`, not `disputed`. No commit, no push. The skill had no rule for a true claim about an intended change (D44). Task withdrawn |
+| S2, re-run | 2026-11-05 | Pass | Task `f-080fb5e5` (`fact`): finding emitted 19:57:34 into bob's quarantine, receipt and ack (`m-01M6PMKGDVX8TEDX8EPE6D1KTN`); bob's agent replied `disputed` at 19:58:02, quoting commit `d44e098`, README.md, both cancel tests and the `Store.Cancel` comment, and noted that `internal/order` cannot be imported from outside the module; outcome note posted. Alice's agent re-checked and replied `withdrawn` (round 3, `m-01M6PMN1W5ZF1J91GSCP9F0M6A`). `scenario/S2` stayed at `d44e098`, worktree clean, no promoter run. Note: `go test` in the quarantine needed `GOCACHE` under `$TMPDIR`, because the sandbox blocks the default Go build cache |
+
