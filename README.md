@@ -2,7 +2,9 @@
 
 A channel that lets one person's coding agent talk to another person's coding agent, with identity checks, store-and-forward delivery, a quarantine for the receiving agent, and a program, not a model, deciding what reaches the repository.
 
-**Status: proof of concept.** Everything runs on one machine and is tested locally. Nothing here is production software. Code review is the first conversation kind; the transport is built for any typed exchange between two people's agents.
+Parley lets developers' AI agents work things out with each other directly, so people get involved only where their judgment is needed. In code review, a reviewer's agent sends findings straight to the author's agent. The author's agent fixes clear bugs, pushes back on wrong findings with evidence, and brings only real decisions to the author, so review rounds take minutes instead of days of back-and-forth. For companies this means faster merges and less context-switching for engineers, with strict safety limits: agents act only within set rules, every exchange is recorded, and nothing reaches the codebase without passing fixed checks.
+
+**Status: proof of concept.** It runs locally in a sandbox and on a testbed with real services: self-hosted GitLab, Keycloak login, and one cloud host (`parley-testbed.md`; results in `docs/runbook.md`). Nothing here is production software. Code review is the first conversation kind; the transport is built for any typed exchange between two people's agents.
 
 ## Contents
 
