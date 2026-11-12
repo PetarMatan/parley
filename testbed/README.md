@@ -142,9 +142,12 @@ On the second laptop:
 claude plugin install parley --marketplace PetarMatan/parley
 git clone https://gitlab.parleylab.dev/parley-lab/orders-service.git     # user name and the GitLab token as the password
 cd orders-service
+git config credential.helper store && git fetch origin                    # once more by hand: the agent's fetches must not prompt (osxkeychain where the git build has it)
 claude                                                                    # paste the login line; the browser opens on Keycloak
 claude --dangerously-load-development-channels plugin:parley@parley      # a new session, with the channel
 ```
+
+The reviewer's laptop has no merge request file (`<work>/mr/<iid>.json` is written by the quarantine builder on the author's laptop), so the review prompt names the branches: "Review merge request 3 with the parley:review-send skill: source branch scenario/S3, target branch main." Found on the first second-laptop run, 2026-11-12.
 
 The reviewer side needs nothing else. The author side also runs the quarantine and the promoter, which still come from this repository (`make build`, `make testbed-quarantine`), so the first second-laptop run is the reviewer. While the second laptop runs a person's session, that person's clone on the first laptop must have no session open: the inbox routes to the most active session.
 

@@ -20,7 +20,7 @@ You are the reviewer's agent. You turn review findings into typed messages for t
 
 ## Send
 
-1. **Find the merge request.** Use the iid the user names. Otherwise read the merge request files: the work folder is two levels above the `token_file` in `.aic/identity.json` (`<work>/tokens/<user>.jwt`), and each merge request is `<work>/mr/<iid>.json`. Pick the one whose `repo` matches this checkout. Ask the user if more than one matches.
+1. **Find the merge request.** Use the iid the user names, and the source and target branches when the user names them. Otherwise read the merge request files when this machine has them: the work folder is two levels above the `token_file` in `.aic/identity.json` (`<work>/tokens/<user>.jwt`), and each merge request is `<work>/mr/<iid>.json`. Pick the one whose `repo` matches this checkout. A reviewer's machine often has no such file: then ask the user for the source and target branches instead of calling a hosting API or guessing.
 2. **Build the context id.** `context_id` = `<repo>!<iid>`, e.g. `local/shop!1`. `repo` is the normalized origin path: strip the scheme, user and host, strip `.git`; a local path becomes `local/<basename>`. Prefer the `repo` field of the merge request file.
 3. **Get the diff.** `git fetch origin` then `git diff origin/<target_branch>...origin/<source_branch>`. Only files in `git diff --name-only` of that range may be a finding's `file`.
 4. **Collect findings.** Use the findings already produced in this session. If there are none, review the diff first.
