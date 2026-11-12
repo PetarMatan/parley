@@ -14,7 +14,7 @@ The proof of concept proved the message path on one machine with fakes. This pla
 
 ---
 
-## Status (updated 2026-11-11)
+## Status (updated 2026-11-12)
 
 Read this first in a new session. The rows in `docs/runbook.md`, section "Testbed scenario results", hold the evidence; `DECISIONS.md` holds the reasons.
 
@@ -22,7 +22,8 @@ Read this first in a new session. The rows in `docs/runbook.md`, section "Testbe
 
 - Phases 0 to 2 are done: domain and DNS, the host with Keycloak, GitLab CE, agentgateway and the inbox under Compose, and the code changes (access token, refresh, GitLab provider). Phase 3 has run the whole one-laptop catalogue. Phase 4 (headless agents) has not started.
 - Scenarios S1 to S12 passed on the real stack, between 2026-11-01 and 2026-11-09; S9 was re-run on 2026-11-11 with D47 and D48 and passed. S13 waits for the T7 group policy; S14 waits for the second conversation kind (P20).
-- The inbox on the host runs the D45 build: round cap 10, exhaustion at the last round marks the task `failed`, tells both sides and records both positions on the merge request. The project's `main` carries the matching skills.
+- The inbox on the host runs the D47 build (rebuilt 2026-11-10): round cap 10 from `AIC_MAX_ROUNDS` only, reported on every result; exhaustion at the last round marks the task `failed`, tells both sides and records both positions on the merge request. The project's `main` (`c25f66e`) commits only `.aic/policy.json`; the skills come from the plugin.
+- Everything up to here is committed and pushed: `main` on GitHub is at `2a8d087` (2026-11-12, five commits: vision, inbox D45 and D47, testbed scripts, the plugin D47 to D52, docs). A second laptop installs the plugin from that repository.
 - Verified live 2026-11-12 (runbook row "S10 (re-run on the plugin route)"): the plugin is a Claude Code plugin (`claude plugin install parley --marketplace PetarMatan/parley`; the hooks and the skills ship inside, D49), the login writes a checkout's identity from one pasted line (`/parley:login <channel> <issuer> <client-id> [claim]`, D50), the project commits only `.aic/policy.json`, and `make testbed-user-token USER=<name>` issues a person's GitLab token (D51). This is what a second laptop needs: Node, git, Claude Code with GitHub read access, the login line, the Keycloak password and the GitLab token (`testbed/README.md`, "Second laptop").
 - The host is stopped between sessions (`make testbed-start` to resume, about five minutes for GitLab). Before a session: check the public address against the SSH rule (section 7) and refresh every person's token; access tokens live five minutes, the scripts refresh them.
 
@@ -36,14 +37,17 @@ D30 and D39 (delivery and ack, D41 and D42), D40 (round cap, D45), D46 (cap sour
 - D34 (promoter pushes every commit in the range), D35 (only outside a quarantine: a restarted normal session still needs the context id), D36 (an approved escalation has no path to the promoter), D37 (guard misreads heredocs).
 - T45: a disabled person keeps the channel until the access token expires, five minutes plus 60 s skew.
 - The quarantine worktree inherits the clone's git credential helper; whether the agent can reach it is untested.
+- D52 (the server registers a session the inbox does not know before the stream retries) is tested but not yet seen live.
+- Refresh tokens do not survive a night: on 2026-11-12 both people's tokens from the day before were dead (`invalid_grant`), so every session day starts with a login. This is the limit the "closed laptop receiving later" test will measure. The refresh tick is also expected to show a false "log in again" notice while a laptop is offline for more than about three minutes (`plugin/lib/refresh.mjs`, `needsLogin` counts a network error as a provider refusal); the sleep test should confirm it before it is changed.
 
 **Next steps, in order**
 
 1. Done 2026-11-11: S9 re-run with D47 and D48 passed. Testbed logins: never use the sign-out link between two people; the second person logs in from a private window (T46).
-2. Done 2026-11-12: the plugin route checked live on this laptop (D49 to D52, S10 re-run). Next, step 3 of section 12: a second laptop and a second person; sleep and reconnect; a closed laptop receiving later. The hand-over and the steps are in `testbed/README.md`, "Second laptop".
-3. Phase 4: headless agents with the device-code login, so the catalogue runs from a script (`make e2e`).
-4. The second conversation kind (P20) and S14.
-5. Hardening: T7 group policy and S13, D34, D36, the credential-helper question.
+2. Done 2026-11-12: the plugin route checked live on this laptop (D49 to D52, S10 re-run) and pushed.
+3. Step 3 of section 12, in two slices: (a) on this laptop, bob's quarantine session loses Wi-Fi for a few minutes while alice's side sends a reply, then gets it back: reconnect, queued delivery, and the expected false login notice; (b) the second laptop as the reviewer, from the hand-over in `testbed/README.md`, "Second laptop": the person gets GitHub read access, the login line, the Keycloak password and a GitLab token from `make testbed-user-token`; then a closed laptop receiving later, and two people watching their own sessions.
+4. Phase 4: headless agents with the device-code login, so the catalogue runs from a script (`make e2e`).
+5. The second conversation kind (P20) and S14.
+6. Hardening: T7 group policy and S13, D34, D36, the credential-helper question.
 
 ---
 
