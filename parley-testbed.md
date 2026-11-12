@@ -21,7 +21,7 @@ Read this first in a new session. The rows in `docs/runbook.md`, section "Testbe
 **Where the work stands**
 
 - Phases 0 to 2 are done: domain and DNS, the host with Keycloak, GitLab CE, agentgateway and the inbox under Compose, and the code changes (access token, refresh, GitLab provider). Phase 3 has run the whole one-laptop catalogue. Phase 4 (headless agents) has not started.
-- Scenarios S1 to S12 passed on the real stack, between 2026-11-01 and 2026-11-09; S9 was re-run on 2026-11-11 with D47 and D48 and passed. S13 waits for the T7 group policy; S14 waits for the second conversation kind (P20).
+- Scenarios S1 to S12 passed on the real stack, between 2026-11-01 and 2026-11-09; S9 was re-run on 2026-11-11 with D47 and D48 and passed; S15 (many findings across two laptops) was added and passed on 2026-11-12. S13 waits for the T7 group policy; S14 waits for the second conversation kind (P20).
 - The inbox on the host runs the D47 build (rebuilt 2026-11-10): round cap 10 from `AIC_MAX_ROUNDS` only, reported on every result; exhaustion at the last round marks the task `failed`, tells both sides and records both positions on the merge request. The project's `main` (`c25f66e`) commits only `.aic/policy.json`; the skills come from the plugin.
 - Everything up to here is committed and pushed: `main` on GitHub is at `2a8d087` (2026-11-12, five commits: vision, inbox D45 and D47, testbed scripts, the plugin D47 to D52, docs). A second laptop installs the plugin from that repository.
 - Verified live 2026-11-12 (runbook row "S10 (re-run on the plugin route)"): the plugin is a Claude Code plugin (`claude plugin install parley --marketplace PetarMatan/parley`; the hooks and the skills ship inside, D49), the login writes a checkout's identity from one pasted line (`/parley:login <channel> <issuer> <client-id> [claim]`, D50), the project commits only `.aic/policy.json`, and `make testbed-user-token USER=<name>` issues a person's GitLab token (D51). This is what a second laptop needs: Node, git, Claude Code with GitHub read access, the login line, the Keycloak password and the GitLab token (`testbed/README.md`, "Second laptop").
@@ -45,7 +45,7 @@ D30 and D39 (delivery and ack, D41 and D42), D40 (round cap, D45), D46 (cap sour
 
 1. Done 2026-11-11: S9 re-run with D47 and D48 passed. Testbed logins: never use the sign-out link between two people; the second person logs in from a private window (T46).
 2. Done 2026-11-12: the plugin route checked live on this laptop (D49 to D52, S10 re-run) and pushed.
-3. Step 3 of section 12. Done 2026-11-12: the second laptop as the reviewer (runbook row "S3 (re-run across two laptops)"): plugin install from GitHub, clone with the issued token, `/parley:login`, a full review with two findings, an escalation, a push by the person and two acceptances; three reviewer-side gaps recorded as T47 and fixed in the procedure and the skill. Still to run: (a) on this laptop, bob's quarantine session loses Wi-Fi for a few minutes while alice's side sends a reply, then gets it back: reconnect, queued delivery, and the expected false login notice; (b) a closed laptop receiving later; (c) two people watching their own sessions at the same time, which the S3 re-run already did for one exchange.
+3. Step 3 of section 12. Done 2026-11-12: the second laptop as the reviewer (runbook rows "S3 (re-run across two laptops)" and "S15": five findings, four promoter pushes, one escalation, all accepted, merged): plugin install from GitHub, clone with the issued token, `/parley:login`, a full review with two findings, an escalation, a push by the person and two acceptances; three reviewer-side gaps recorded as T47 and fixed in the procedure and the skill. Still to run: (a) on this laptop, bob's quarantine session loses Wi-Fi for a few minutes while alice's side sends a reply, then gets it back: reconnect, queued delivery, and the expected false login notice; (b) a closed laptop receiving later; (c) two people watching their own sessions at the same time, which the S3 re-run already did for one exchange.
 4. Phase 4: headless agents with the device-code login, so the catalogue runs from a script (`make e2e`).
 5. The second conversation kind (P20) and S14.
 6. Hardening: T7 group policy and S13, D34, D36, the credential-helper question.
@@ -238,6 +238,7 @@ The planted defects live on branches, one per scenario. Each branch has one merg
 | S12 | Canaries | the thirteen poisoned findings | Same results as the local suite, through the real gateway |
 | S13 | Group policy | `alice` sends a `security` class finding, T7 on | Rejected: only `security` group members may send that class |
 | S14 | Second conversation kind | to be defined | Proves the transport is kind-neutral on the real stack |
+| S15 | Many findings across two laptops | a merge request with planted defects of every class (`scenario/S15`, merge request 6); the reviewer on the second laptop | Several tasks in flight at once; the promoter pushes the fact fixes, the product decision goes to the person. Added and run 2026-11-12 |
 
 ---
 

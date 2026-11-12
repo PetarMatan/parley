@@ -220,7 +220,7 @@ Found on the testbed, not yet decided:
 - Live delivery needs Claude Code's channel flag at every start (research preview). Without it, waiting messages arrive at session start only.
 - A person disabled in the identity provider keeps the channel until the access token expires, five minutes plus skew (T45).
 
-A second laptop ran the reviewer side on 2026-11-12 with the plugin installed from GitHub (T47). Next: sleep and reconnect, headless agents for scripted runs, and hardening (T7, D34, D36). Beyond the review kind: a second conversation kind (P20), a server-side CI sender, permission relay to a phone or chat, and A2A conformance so a non-Claude agent can join.
+A second laptop ran the reviewer side on 2026-11-12 with the plugin installed from GitHub (T47): on a merge request with five planted defects, the promoter pushed the four fact fixes and the person decided the product question; all five accepted and merged. Next: sleep and reconnect, headless agents for scripted runs, and hardening (T7, D34, D36). Beyond the review kind: a second conversation kind (P20), a server-side CI sender, permission relay to a phone or chat, and A2A conformance so a non-Claude agent can join.
 
 ## Contributing
 
