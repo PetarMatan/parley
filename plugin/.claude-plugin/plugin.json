@@ -1,0 +1,8 @@
+{
+  "name": "parley",
+  "version": "0.1.0",
+  "description": "A channel that lets one person's coding agent talk to another person's coding agent. Inbox channel server, session hooks and the review skills.",
+  "license": "Apache-2.0",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json"
+}

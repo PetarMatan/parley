@@ -42,14 +42,26 @@ test('system replies from the inbox pass', () => {
 });
 
 test('channel meta keys are identifiers and values are strings', () => {
-  const meta = channelMeta(checkEnvelope(envelope()).msg);
-  assert.deepEqual(Object.keys(meta), ['message_id', 'context_id', 'task_id', 'from', 'kind', 'round']);
+  const meta = channelMeta(checkEnvelope(envelope()).msg, 10);
+  assert.deepEqual(Object.keys(meta), ['message_id', 'context_id', 'task_id', 'from', 'kind', 'round', 'max_rounds']);
   for (const [k, v] of Object.entries(meta)) {
     assert.match(k, /^[A-Za-z0-9_]+$/);
     assert.equal(typeof v, 'string');
   }
   assert.equal(meta.kind, 'finding');
   assert.equal(meta.round, '1');
+  assert.equal(meta.max_rounds, '10');
+});
+
+test('an unknown cap leaves max_rounds out of the meta and the header (D47)', () => {
+  const msg = checkEnvelope(envelope({ round: 3 })).msg;
+  assert.equal('max_rounds' in channelMeta(msg), false);
+  assert.equal('max_rounds' in channelMeta(msg, 0), false);
+  assert.equal('max_rounds' in channelMeta(msg, 'x'), false);
+  assert.match(renderMessage(msg), /round 3, sent_at/);
+  assert.match(renderMessage(msg, 10), /round 3 of 10, sent_at/);
+  assert.match(renderSessionContext([msg], 0, [], 10), /round 3 of 10/);
+  assert.match(renderChannelContext([msg], [], 10), /round 3 of 10/);
 });
 
 test('rendered content names the sender and keeps data inside one JSON line', () => {

@@ -1,0 +1,12 @@
+{
+  "name": "parley",
+  "owner": { "name": "Parley" },
+  "plugins": [
+    {
+      "name": "parley",
+      "source": "./plugin",
+      "description": "A channel that lets one person's coding agent talk to another person's coding agent.",
+      "version": "0.1.0"
+    }
+  ]
+}

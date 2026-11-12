@@ -45,7 +45,7 @@ export function psArgs(pid) {
   return ps(pid, ['-ww', '-o', 'args='])?.split(/\s+/) ?? null;
 }
 
-const CHANNEL_ENTRY = /^(server:aic-inbox|plugin:aic-inbox@\S+)$/;
+const CHANNEL_ENTRY = /^(server:aic-inbox|plugin:parley@\S+)$/;
 
 /**
  * Reads a claude command line (D41). channels: the session was started with

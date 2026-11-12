@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mergeSettings, overlayFor, mergeMcp } from '../overlay.mjs';
+import { mergeSettings, overlayFor } from '../overlay.mjs';
 
 const QROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ROOT = path.dirname(QROOT);
@@ -41,7 +41,7 @@ function makeWork() {
   git(stage, 'push', '-q', path.join(work, 'origin.git'), 'main', 'feature/discount');
   git(base, 'clone', '-q', '--branch', 'feature/discount', path.join(work, 'origin.git'), path.join(work, 'clone-b'));
   write(work, 'clone-b/.aic/identity.json', '{"user":"b@example.com"}\n');
-  write(work, 'clone-b/.aic/policy.json', '{"ceiling":{"fact":"L2","taste":"L0","product":"L0"},"max_rounds":5,"max_patch_lines":400}\n');
+  write(work, 'clone-b/.aic/policy.json', '{"ceiling":{"fact":"L2","taste":"L0","product":"L0"},"max_patch_lines":400}\n');
   write(work, 'mr/1.json', JSON.stringify({ iid: 1, repo: 'local/shop', source_branch: 'feature/discount', target_branch: 'main', author: 'b@example.com', reviewers: ['a@example.com'], assignees: ['b@example.com'] }));
   return { base, work };
 }
@@ -79,8 +79,10 @@ test('make-quarantine builds a guarded worktree from the base-branch instruction
   assert.equal(s.sandbox.enabled, true);
   assert.deepEqual(s.sandbox.network.allowedDomains, []);
 
-  const mcp = JSON.parse(fs.readFileSync(path.join(q, '.mcp.json'), 'utf8'));
-  assert.deepEqual(mcp.mcpServers['aic-inbox'].args, [path.join(ROOT, 'plugin/server.mjs')]);
+  // The channel server comes from the installed plugin (D49): the worktree's
+  // .mcp.json is the base branch's, with no server of ours added.
+  const mcp = fs.existsSync(path.join(q, '.mcp.json')) ? JSON.parse(fs.readFileSync(path.join(q, '.mcp.json'), 'utf8')) : {};
+  assert.equal(mcp.mcpServers?.['aic-inbox'], undefined);
 
   // Nothing generated or restored shows up as a change.
   assert.equal(git(q, 'status', '--porcelain'), '');
@@ -100,7 +102,7 @@ test('make-quarantine builds a guarded worktree from the base-branch instruction
 
   const start = fs.readFileSync(path.join(q, 'start-session.sh'), 'utf8');
   assert.match(start, /exec env -i /);
-  assert.match(start, /--dangerously-load-development-channels server:aic-inbox/);
+  assert.match(start, /--dangerously-load-development-channels plugin:parley@parley/);
   assert.match(start, new RegExp(`AIC_CHECKOUT="${q}"`));
   execFileSync('bash', ['-n', path.join(q, 'start-session.sh')]);
 
@@ -121,5 +123,4 @@ test('mergeSettings keeps base hooks, drops disableAllHooks and unions deny rule
   assert.equal(out.hooks.PreToolUse[1].hooks.length, 1, 'no extra guard entry without AIC_EXTRA_GUARD');
   const withGuard = overlayFor({ root: '/r', configPath: '/g/c.json', extraGuard: '/usr/local/bin/my-guard check --hook' });
   assert.equal(withGuard.hooks.PreToolUse[0].hooks[1].command, '/usr/local/bin/my-guard check --hook');
-  assert.deepEqual(mergeMcp({ mcpServers: { other: {} } }, '/r').mcpServers['aic-inbox'], { command: 'node', args: ['/r/plugin/server.mjs'] });
 });

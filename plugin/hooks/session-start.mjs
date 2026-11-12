@@ -16,7 +16,7 @@
 import { runHook } from '../lib/hook.mjs';
 import { detectChannelMode, readChannelHealth, writeBridge } from '../lib/bridge.mjs';
 import { sessionInfo } from '../lib/repo.mjs';
-import { checkEnvelope, renderChannelContext, renderSessionContext, waitingNotice, CHANNEL_DEAD_NOTICE, NO_CHANNEL_NOTICE } from '../lib/render.mjs';
+import { checkEnvelope, renderChannelContext, renderSessionContext, waitingNotice, noIdentityNotice, CHANNEL_DEAD_NOTICE, NO_CHANNEL_NOTICE } from '../lib/render.mjs';
 import { authorMessageIds, quarantineNotice } from '../lib/hold.mjs';
 
 await runHook('session-start', async ({ input, checkout, identity, client, log, claudePid }) => {
@@ -29,11 +29,11 @@ await runHook('session-start', async ({ input, checkout, identity, client, log, 
     await client.registerSession(sessionId, info);
     log.info('session_registered', { session_id: sessionId, repo: info.repo, branch: info.branch, source: input.source, channels: mode.channels, transcript: Boolean(input.transcript_path), outcome: 'ok' });
 
-    const { messages = [] } = (await client.listInbox(info.repo, info.branch)) ?? {};
+    const { messages = [], max_rounds: maxRounds = null } = (await client.listInbox(info.repo, info.branch)) ?? {};
     const dead = mode.channels && readChannelHealth(checkout) === 'dead';
     const out = mode.channels && !dead
-      ? await channelSession(messages, { sessionId, info, identity, client, log })
-      : await pullSession(messages, { sessionId, info, identity, client, log });
+      ? await channelSession(messages, { sessionId, info, identity, client, log, maxRounds })
+      : await pullSession(messages, { sessionId, info, identity, client, log, maxRounds });
     // A person who forgot the flag is told once per launch; a -p run
     // (canaries) is not, and neither is /clear or a compaction.
     const launch = !input.source || input.source === 'startup' || input.source === 'resume';
@@ -47,13 +47,14 @@ await runHook('session-start', async ({ input, checkout, identity, client, log, 
   }
 }, {
   onError: (message) => ({ systemMessage: `aic-inbox: inbox not reached at session start (${message}). Messages may be waiting.` }),
+  onNoIdentity: (dir) => ({ systemMessage: noIdentityNotice(dir) }),
 });
 
 function contextOutput(additionalContext) {
   return { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext } };
 }
 
-async function channelSession(messages, { sessionId, info, identity, client, log }) {
+async function channelSession(messages, { sessionId, info, identity, client, log, maxRounds }) {
   // A pushed message is in flight to another live session. An invalid one is
   // dropped and logged by the channel server.
   const waiting = messages.filter((env) => env.state === 'queued').map(checkEnvelope).filter((c) => c.ok).map((c) => c.msg);
@@ -64,10 +65,10 @@ async function channelSession(messages, { sessionId, info, identity, client, log
   if (!waiting.length) return null;
   const notices = toStream ? [waitingNotice(toStream)] : [];
   if (heldMsgs.length) notices.push(quarantineNotice(heldMsgs));
-  return contextOutput(renderChannelContext(heldMsgs, notices));
+  return contextOutput(renderChannelContext(heldMsgs, notices, maxRounds));
 }
 
-async function pullSession(messages, { sessionId, info, identity, client, log }) {
+async function pullSession(messages, { sessionId, info, identity, client, log, maxRounds }) {
   const shown = [];
   const states = new Map();
   let dropped = 0;
@@ -101,5 +102,5 @@ async function pullSession(messages, { sessionId, info, identity, client, log })
   if (!shown.length && !dropped) return null;
   const heldMsgs = shown.filter((m) => held.has(m.message_id));
   const notices = heldMsgs.length ? [quarantineNotice(heldMsgs)] : [];
-  return contextOutput(renderSessionContext(shown, dropped, notices));
+  return contextOutput(renderSessionContext(shown, dropped, notices, maxRounds));
 }

@@ -3,7 +3,7 @@
 TESTBED_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 TF := terraform -chdir=$(TESTBED_DIR)terraform
 
-.PHONY: testbed-root-token testbed-seed-gitlab testbed-admin testbed-init testbed-plan testbed-apply testbed-deploy testbed-status testbed-ssh testbed-stop testbed-start testbed-destroy
+.PHONY: testbed-root-token testbed-seed-gitlab testbed-user-token testbed-admin testbed-init testbed-plan testbed-apply testbed-deploy testbed-status testbed-ssh testbed-stop testbed-start testbed-destroy
 
 testbed-init:
 	$(TF) init -input=false
@@ -47,3 +47,7 @@ testbed-root-token:
 
 testbed-seed-gitlab:
 	bash $(TESTBED_DIR)scripts/seed-gitlab.sh
+
+# A GitLab token for one person's git clone and push: make testbed-user-token USER=bob
+testbed-user-token:
+	@bash $(TESTBED_DIR)scripts/gitlab-user-token.sh $(USER)

@@ -55,12 +55,15 @@ test('channelMode reads the channel flags of a claude command line', () => {
   const m = (line) => channelMode(line.split(' '));
   assert.deepEqual(m('claude'), { channels: false, print: false });
   assert.deepEqual(m('claude --dangerously-load-development-channels server:aic-inbox'), { channels: true, print: false });
-  assert.deepEqual(m('claude --channels plugin:aic-inbox@acme --model opus'), { channels: true, print: false });
-  assert.deepEqual(m('claude --channels plugin:telegram@claude-plugins-official plugin:aic-inbox@acme'), { channels: true, print: false });
+  assert.deepEqual(m('claude --channels plugin:parley@acme --model opus'), { channels: true, print: false });
+  assert.deepEqual(m('claude --channels plugin:telegram@claude-plugins-official plugin:parley@acme'), { channels: true, print: false });
   assert.deepEqual(m('claude --channels=server:aic-inbox'), { channels: true, print: false });
+  assert.deepEqual(m('claude --dangerously-load-development-channels plugin:parley@parley'), { channels: true, print: false }, 'the installed plugin (D49)');
+  assert.deepEqual(m('claude --channels plugin:parley@parley'), { channels: true, print: false });
+  assert.deepEqual(m('claude --channels plugin:other@parley'), { channels: false, print: false });
   // -p ignores the development flag, not --channels.
   assert.deepEqual(m('claude -p hi --dangerously-load-development-channels server:aic-inbox'), { channels: false, print: true });
-  assert.deepEqual(m('claude --print hi --channels plugin:aic-inbox@acme'), { channels: true, print: true });
+  assert.deepEqual(m('claude --print hi --channels plugin:parley@acme'), { channels: true, print: true });
   // Another server, or our name as a prompt word, is not our channel.
   assert.deepEqual(m('claude --channels server:webhook'), { channels: false, print: false });
   assert.deepEqual(m('claude --channels -c server:aic-inbox'), { channels: false, print: false });

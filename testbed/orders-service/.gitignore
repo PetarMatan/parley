@@ -1,4 +1,6 @@
-# Parley per-checkout files: identity, token path, policy, quarantine marker
-.aic/
-# Claude Code local settings (PARLEY_ROOT for this machine)
+# Parley per-checkout files: identity, token path, sessions, logs, quarantine marker.
+# policy.json is committed: the authority ceiling is the project's, not the person's.
+.aic/*
+!.aic/policy.json
+# Claude Code local settings of this machine
 .claude/settings.local.json

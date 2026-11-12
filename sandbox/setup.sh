@@ -57,7 +57,7 @@ if [[ ! -d "$ORIGIN" ]]; then
   trap 'rm -rf "$STAGE"' EXIT
   g init -q -b main "$STAGE"
   cd "$STAGE"
-  mkdir -p src test .claude
+  mkdir -p src test
 
   cat > package.json <<'EOF'
 {
@@ -106,36 +106,8 @@ test('fixed discount never goes below zero', () => {
 });
 EOF
 
-  cat > .claude/settings.json <<EOF
-{
-  "hooks": {
-    "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "node \"$ROOT/plugin/hooks/session-start.mjs\"" } ] }
-    ],
-    "SessionEnd": [
-      { "hooks": [ { "type": "command", "command": "node \"$ROOT/plugin/hooks/session-end.mjs\"" } ] }
-    ],
-    "CwdChanged": [
-      { "hooks": [ { "type": "command", "command": "node \"$ROOT/plugin/hooks/cwd-changed.mjs\"" } ] }
-    ]
-  }
-}
-EOF
-
-  cat > .mcp.json <<EOF
-{
-  "mcpServers": {
-    "aic-inbox": {
-      "command": "node",
-      "args": ["$ROOT/plugin/server.mjs"]
-    }
-  }
-}
-EOF
-
-  # Skills are committed on main: the quarantine restores .claude/ from main
-  # and a fresh worktree has no untracked files (docs/decisions/skills.md).
-  bash "$ROOT/skills/install.sh" "$STAGE" >/dev/null
+  # Nothing of Parley is committed here: the channel server, the hooks and
+  # the review skills come from the installed plugin (D49).
 
   g add -A
   commit_as b@example.com "shop: fixed discount helper"
@@ -213,7 +185,7 @@ make_clone() { # <dir> <user> <branch>
 {"user":"$user","token_file":"$AIC_WORK/tokens/$user.jwt","base_url":"$AIC_BASE_URL","oidc":{"issuer":"http://localhost:5556/dex","client_id":"aic-cli","token":"id"}}
 EOF
   cat > "$dir/.aic/policy.json" <<'EOF'
-{"ceiling":{"fact":"L2","taste":"L0","product":"L0"},"max_rounds":5,"max_patch_lines":400}
+{"ceiling":{"fact":"L2","taste":"L0","product":"L0"},"max_patch_lines":400}
 EOF
 }
 make_clone clone-a a@example.com main
@@ -226,3 +198,4 @@ cat > "$AIC_WORK/mr/1.json" <<'EOF'
 EOF
 
 log "done. diff files: $(g --git-dir "$ORIGIN" diff --name-only main...feature/discount | tr '\n' ' ')"
+log "sessions need the plugin installed once per machine: claude plugin marketplace add \"$ROOT\" && claude plugin install parley@parley"

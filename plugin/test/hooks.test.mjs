@@ -2,7 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startStub, makeCheckout, envelope, markQuarantine, authorContext } from './stub-inbox.mjs';
 import { bridgePath, writeBridge, writeChannelHealth } from '../lib/bridge.mjs';
@@ -340,4 +341,24 @@ test('session-start with a channel pulls and acks when the last channel session 
   assert.deepEqual(stub.calls.filter((c) => c.url.endsWith('/ack')).map((c) => c.url), [`/v1/messages/${queued.message_id}/ack`]);
   assert.equal(JSON.parse(readFileSync(bridgePath(checkout, PID), 'utf8')).channels, true, 'the stream still tests the channel');
   await stub.close();
+});
+
+test('session-start in a Parley project nobody has logged in to names the login skill, and does nothing elsewhere (D50)', async () => {
+  const project = mkdtempSync(join(tmpdir(), 'aic-noid-'));
+  mkdirSync(join(project, '.aic'));
+  writeFileSync(join(project, '.aic', 'policy.json'), '{"ceiling":{"fact":"L2"},"max_patch_lines":400}\n');
+  const sub = join(project, 'internal');
+  mkdirSync(sub);
+  const r = await runHook('session-start', { session_id: 'sess-n', cwd: sub, hook_event_name: 'SessionStart', source: 'startup' }, project, { AIC_CHECKOUT: '' });
+  assert.equal(r.code, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.deepEqual(Object.keys(out), ['systemMessage']);
+  assert.match(out.systemMessage, /nobody is logged in to the channel here/);
+  assert.match(out.systemMessage, /\/parley:login <channel-url> <issuer> <client-id>/);
+  assert.ok(out.systemMessage.includes(project));
+
+  const plain = mkdtempSync(join(tmpdir(), 'aic-plain-'));
+  const r2 = await runHook('session-start', { session_id: 'sess-p', cwd: plain, hook_event_name: 'SessionStart', source: 'startup' }, plain, { AIC_CHECKOUT: '' });
+  assert.equal(r2.code, 0, r2.stderr);
+  assert.equal(r2.stdout, '', 'a folder that is not a Parley project gets no notice');
 });

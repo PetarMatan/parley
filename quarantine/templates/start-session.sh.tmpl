@@ -10,5 +10,5 @@ done
 # --settings carries sandbox.network.strictAllowlist, which Claude Code
 # ignores in project settings files.
 exec env -i ${keep[@]+"${keep[@]}"} AIC_WORK="__WORK__" AIC_CHECKOUT="__QDIR__" \
-  claude --dangerously-load-development-channels server:aic-inbox \
+  claude --dangerously-load-development-channels plugin:parley@parley \
   --settings "__SESSION_SETTINGS__" "$@"

@@ -2,7 +2,7 @@
 // error ends in exit code 0 with a one-line notice.
 import { join } from 'node:path';
 import { createLogger } from './log.mjs';
-import { findCheckout, loadIdentity } from './identity.mjs';
+import { findCheckout, findProjectWithoutIdentity, loadIdentity } from './identity.mjs';
 import { InboxClient } from './client.mjs';
 import { findClaudePid } from './bridge.mjs';
 import { needsLogin, refreshIfNeeded } from './refresh.mjs';
@@ -15,16 +15,23 @@ export async function readStdin() {
 
 /**
  * Runs fn({input, checkout, identity, client, log, claudePid}). fn returns the
- * hook's stdout object or null. Outside an aic checkout the hook does nothing.
- * onError(message) returns the stdout object for a failure, or null.
+ * hook's stdout object or null. Outside an aic checkout the hook does nothing,
+ * except that onNoIdentity(dir), when given, returns the stdout object for a
+ * Parley project nobody has logged in to (an .aic directory without
+ * identity.json). onError(message) returns the stdout object for a failure,
+ * or null.
  */
-export async function runHook(name, fn, { onError = () => null } = {}) {
+export async function runHook(name, fn, { onError = () => null, onNoIdentity = null } = {}) {
   const log = createLogger({ component: `aic-hook-${name}` });
   let out = null;
   try {
     const input = await readStdin();
     const checkout = findCheckout(input.cwd || process.cwd());
-    if (!checkout) return;
+    if (!checkout) {
+      const project = onNoIdentity ? findProjectWithoutIdentity(input.cwd || process.cwd()) : null;
+      if (project) process.stdout.write(JSON.stringify(onNoIdentity(project)) + '\n');
+      return;
+    }
     log.setFile(join(checkout, '.aic', 'plugin.jsonl'));
     const identity = loadIdentity(checkout);
     const timeoutMs = Number(process.env.AIC_HOOK_TIMEOUT_MS) || 5000;

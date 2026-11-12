@@ -6,8 +6,9 @@
 // <state> is $AIC_WORK/quarantine/<iid>: outside the worktree and outside
 // clone-b/.git, both of which the session's sandboxed Bash may write.
 //   <worktree>/.claude/settings.json    base-branch settings + guard overlay
-//   <worktree>/.mcp.json                base-branch servers + aic-inbox
 //   <worktree>/start-session.sh
+// The channel server, the hooks and the skills come from the installed Parley
+// plugin (D49), so no server is added to the worktree's .mcp.json.
 //
 // node overlay.mjs --root R --worktree Q --state S --work W --mr <mr.json>
 //                  --source-sha S --target-sha T [--extra-guard <command>]
@@ -77,13 +78,6 @@ export function sessionSettingsFor(base, { worktree, work }) {
   return out;
 }
 
-export function mergeMcp(base, root) {
-  const out = structuredClone(base ?? {});
-  out.mcpServers ??= {};
-  out.mcpServers['aic-inbox'] = { command: 'node', args: [path.join(root, 'plugin', 'server.mjs')] };
-  return out;
-}
-
 function args(argv) {
   const a = {};
   for (let i = 2; i < argv.length; i += 2) a[argv[i].replace(/^--/, '')] = argv[i + 1];
@@ -110,9 +104,6 @@ function main() {
 
   const settingsPath = path.join(a.worktree, '.claude', 'settings.json');
   write(settingsPath, mergeSettings(readJSON(settingsPath, {}), overlayFor({ root: a.root, configPath, extraGuard: a['extra-guard'] })));
-  const mcpPath = path.join(a.worktree, '.mcp.json');
-  write(mcpPath, mergeMcp(readJSON(mcpPath, {}), a.root));
-
   const tmpl = fs.readFileSync(path.join(TEMPLATES, 'start-session.sh.tmpl'), 'utf8');
   for (const p of [a.worktree, a.work, sessionSettings]) q(p);
   const script = tmpl.replaceAll('__QDIR__', a.worktree).replaceAll('__WORK__', a.work).replaceAll('__SESSION_SETTINGS__', sessionSettings);

@@ -2,7 +2,7 @@
   "mcpServers": {
     "aic-inbox": {
       "command": "node",
-      "args": ["${PARLEY_ROOT}/plugin/server.mjs"]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server.mjs"]
     }
   }
 }

@@ -1,7 +1,7 @@
 // Per-checkout identity: <checkout>/.aic/identity.json
 // = {"user","token_file","base_url","oidc"} (contract section 2). The optional
 // oidc block holds the login settings (see lib/oidc.mjs).
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { OIDC_DEFAULTS, parseOidcBlock } from './oidc.mjs';
 
@@ -40,6 +40,36 @@ export function loadIdentity(checkout, env = process.env) {
     oidc,
     identityClaim: env.AIC_IDENTITY_CLAIM || oidc?.identity_claim || OIDC_DEFAULTS.identityClaim,
   };
+}
+
+/**
+ * Writes <checkout>/.aic/identity.json (the login's init mode, D50). The
+ * value is written as given; loadIdentity checks it on the next read.
+ */
+export function writeIdentity(checkout, identity) {
+  const dir = join(checkout, '.aic');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, 'identity.json');
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(identity, null, 2) + '\n');
+  renameSync(tmp, file);
+  return file;
+}
+
+/**
+ * The nearest ancestor of start that is a Parley project with no identity:
+ * it has an .aic directory (the project commits .aic/policy.json) and no
+ * .aic/identity.json. Null when there is none, or when an identity exists.
+ */
+export function findProjectWithoutIdentity(start = process.cwd()) {
+  let dir = resolve(start);
+  for (;;) {
+    if (existsSync(join(dir, '.aic', 'identity.json'))) return null;
+    if (existsSync(join(dir, '.aic'))) return dir;
+    const up = dirname(dir);
+    if (up === dir) return null;
+    dir = up;
+  }
 }
 
 /** Reads the bearer token on each call, so a fresh login takes effect at once. */

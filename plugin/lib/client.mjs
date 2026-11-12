@@ -46,6 +46,14 @@ export class InboxClient {
     return text ? JSON.parse(text) : null;
   }
 
+  /** GET /healthz, the one route without a bearer token. Returns {ok, max_rounds}. */
+  async health() {
+    const res = await this.fetch(this.url('/healthz'), { signal: AbortSignal.timeout(this.timeoutMs) });
+    const text = await res.text();
+    if (!res.ok) throw new InboxError(res.status, `http_${res.status}`, text.slice(0, 500));
+    return text ? JSON.parse(text) : null;
+  }
+
   registerSession(id, info) { return this.request('PUT', `/v1/sessions/${enc(id)}`, info); }
   deleteSession(id) { return this.request('DELETE', `/v1/sessions/${enc(id)}`); }
   listInbox(repo, branch) {
@@ -138,10 +146,11 @@ export function backoffMs(attempt, { min = 1000, max = 30_000 } = {}) {
 /**
  * Keeps one SSE stream open with reconnect. The backoff resets after a stream
  * opened successfully. A stream silent for idleMs (no event, no ping) is
- * treated as dead; the inbox pings every 15 s.
+ * treated as dead; the inbox pings every 15 s. onError(error), when given,
+ * runs before each retry (its own errors are logged and ignored).
  * Returns {done, stop()}; stop() aborts the current stream and ends the loop.
  */
-export function keepStream(client, sessionId, { onEvent, log, idleMs = 45_000, backoff = backoffMs } = {}) {
+export function keepStream(client, sessionId, { onEvent, log, idleMs = 45_000, backoff = backoffMs, onError = null } = {}) {
   let stopped = false;
   let current = null;
   let wake = () => {};
@@ -163,7 +172,12 @@ export function keepStream(client, sessionId, { onEvent, log, idleMs = 45_000, b
         });
         log?.warn('stream_closed', { session_id: sessionId });
       } catch (e) {
-        if (!stopped) log?.warn('stream_error', { session_id: sessionId, error: String(e?.message ?? e) });
+        if (!stopped) {
+          log?.warn('stream_error', { session_id: sessionId, error: String(e?.message ?? e) });
+          if (onError) {
+            try { await onError(e); } catch (e2) { log?.warn('stream_error_handler', { session_id: sessionId, error: String(e2?.message ?? e2) }); }
+          }
+        }
       } finally {
         clearTimeout(idle);
       }

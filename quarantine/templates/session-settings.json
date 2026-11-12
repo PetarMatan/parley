@@ -11,11 +11,11 @@
   },
   "permissions": {
     "allow": [
-      "mcp__aic-inbox__inbox_promote",
-      "mcp__aic-inbox__inbox_reply",
-      "mcp__aic-inbox__inbox_note",
-      "mcp__aic-inbox__inbox_list",
-      "mcp__aic-inbox__inbox_ack"
+      "mcp__plugin_parley_aic-inbox__inbox_promote",
+      "mcp__plugin_parley_aic-inbox__inbox_reply",
+      "mcp__plugin_parley_aic-inbox__inbox_note",
+      "mcp__plugin_parley_aic-inbox__inbox_list",
+      "mcp__plugin_parley_aic-inbox__inbox_ack"
     ]
   }
 }

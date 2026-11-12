@@ -10,22 +10,30 @@
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { join } from 'node:path';
+import { existsSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { findCheckout, loadIdentity } from './lib/identity.mjs';
+import { findCheckout, loadIdentity, writeIdentity } from './lib/identity.mjs';
 import { authorizationUrl, challengeS256, createVerifier, b64url } from './lib/pkce.mjs';
-import { fetchDiscovery, identityFromClaims, resolveOidcConfig, selectToken } from './lib/oidc.mjs';
+import { OIDC_DEFAULTS, fetchDiscovery, identityFromClaims, resolveOidcConfig, selectToken } from './lib/oidc.mjs';
 import { refreshFile, writeAtomic } from './lib/refresh.mjs';
 
 const USAGE = `usage: node plugin/login.mjs [--checkout <dir>] [--no-open]
          [--issuer <url>] [--client-id <id>] [--scopes "<s1 s2>"] [--audience <aud>]
          [--port <n>] [--token id|access] [--identity-claim <claim>]
+         [--base-url <channel url>] [--token-dir <dir>]
 
 Precedence: flag > env (AIC_OIDC_ISSUER, AIC_OIDC_CLIENT_ID, AIC_OIDC_SCOPES,
 AIC_OIDC_AUDIENCE, AIC_OIDC_REDIRECT_PORT, AIC_OIDC_TOKEN, AIC_IDENTITY_CLAIM)
 > the oidc block of <checkout>/.aic/identity.json > defaults
 (scopes "openid email profile", port 5557, token access, identity claim email).
 issuer and client id have no default.
+
+A checkout without .aic/identity.json is initialised when --base-url, --issuer
+and --client-id are given: the person signs in, and the file is written for
+the user the token names, with the token in <token-dir>/<user>.jwt
+(token dir: --token-dir, env AIC_TOKEN_DIR, default ~/.parley/tokens).
 `;
 
 const HOST = '127.0.0.1';
@@ -42,6 +50,8 @@ try {
     port: { type: 'string' },
     token: { type: 'string' },
     'identity-claim': { type: 'string' },
+    'base-url': { type: 'string' },
+    'token-dir': { type: 'string' },
     'no-open': { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h', default: false },
   } }));
@@ -54,12 +64,15 @@ const say = (s) => process.stderr.write(`aic-login: ${s}\n`);
 
 async function main() {
   if (opt.help) { process.stdout.write(USAGE); return; }
-  const checkout = opt.checkout ?? findCheckout();
-  if (!checkout) throw new Error('no .aic/identity.json found; pass --checkout');
-  const identity = loadIdentity(checkout);
-  const cfg = resolveOidcConfig({
-    flags: opt, oidc: identity.oidc, env: process.env, where: join(checkout, '.aic', 'identity.json'),
-  });
+  const init = initRequest(opt, process.env);
+  const checkout = init ? resolve(opt.checkout ?? process.cwd()) : (opt.checkout ?? findCheckout());
+  if (!checkout) throw new Error('no .aic/identity.json found; pass --checkout, or --base-url, --issuer and --client-id to create one');
+  const identityFile = join(checkout, '.aic', 'identity.json');
+  // A checkout without an identity is created from the flags (D50). The user
+  // name is not asked: it comes from the token after the sign-in.
+  const identity = existsSync(identityFile) ? loadIdentity(checkout) : null;
+  if (!identity && !init) throw new Error(`${identityFile} missing; pass --base-url, --issuer and --client-id to create it`);
+  const cfg = resolveOidcConfig({ flags: opt, oidc: identity?.oidc ?? null, env: process.env, where: identityFile });
   const redirectUri = `http://${HOST}:${cfg.redirectPort}/callback`;
 
   const disco = await fetchDiscovery(cfg.issuer);
@@ -87,20 +100,49 @@ async function main() {
   say(`identity claim "${cfg.identityClaim}" = ${who ?? '(missing)'}`);
   // A token for another person would make every session in this checkout act
   // as that person. A browser that is still signed in as someone else causes it.
-  if (who !== identity.user.toLowerCase()) {
+  if (identity && who !== identity.user.toLowerCase()) {
     throw new Error(`signed in as ${who ?? `(no ${cfg.identityClaim} claim)`}, but this checkout belongs to ${identity.user}. ` +
       `Nothing was written. Sign in as ${identity.user} (a private window avoids a provider session of another user) and run the login again.`);
   }
+  if (!who) throw new Error(`the token has no ${cfg.identityClaim} claim; nothing was written`);
+  const target = identity ?? initIdentity(checkout, who, cfg, opt, init);
+  if (!identity) say(`${identityFile} written for ${who}`);
 
-  writeAtomic(identity.tokenFile, token + '\n');
+  writeAtomic(target.tokenFile, token + '\n');
   const exp = Number.isFinite(claims.exp) ? new Date(claims.exp * 1000).toISOString() : 'unknown';
-  say(`${field} for ${who} written to ${identity.tokenFile} (expires ${exp})`);
+  say(`${field} for ${who} written to ${target.tokenFile} (expires ${exp})`);
   if (typeof tok.refresh_token === 'string' && tok.refresh_token) {
-    writeAtomic(refreshFile(identity.tokenFile), tok.refresh_token + '\n');
-    say(`refresh token written to ${refreshFile(identity.tokenFile)}; the session refreshes the token before it expires`);
+    writeAtomic(refreshFile(target.tokenFile), tok.refresh_token + '\n');
+    say(`refresh token written to ${refreshFile(target.tokenFile)}; the session refreshes the token before it expires`);
   } else {
     say('no refresh token issued; log in again when the token expires');
   }
+}
+
+/** The three values that create an identity, or null when any is missing. */
+function initRequest(o, env) {
+  const baseUrl = o['base-url'];
+  const issuer = o.issuer ?? env.AIC_OIDC_ISSUER;
+  const clientId = o['client-id'] ?? env.AIC_OIDC_CLIENT_ID;
+  if (!baseUrl || !issuer || !clientId) return null;
+  return { baseUrl, tokenDir: resolve(o['token-dir'] ?? env.AIC_TOKEN_DIR ?? join(homedir(), '.parley', 'tokens')) };
+}
+
+/**
+ * Writes <checkout>/.aic/identity.json for the person the token named. The
+ * oidc block keeps the login settings that were given, so the hooks and the
+ * server refresh the token without flags; defaults are left out.
+ */
+function initIdentity(checkout, user, cfg, o, { baseUrl, tokenDir }) {
+  const oidc = { issuer: cfg.issuer, client_id: cfg.clientId };
+  if (cfg.identityClaim !== OIDC_DEFAULTS.identityClaim) oidc.identity_claim = cfg.identityClaim;
+  if (cfg.scopes !== OIDC_DEFAULTS.scopes) oidc.scopes = cfg.scopes;
+  if (cfg.audience) oidc.audience = cfg.audience;
+  if (cfg.redirectPort !== OIDC_DEFAULTS.redirectPort) oidc.redirect_port = cfg.redirectPort;
+  if (cfg.token !== OIDC_DEFAULTS.token) oidc.token = cfg.token;
+  mkdirSync(tokenDir, { recursive: true, mode: 0o700 });
+  writeIdentity(checkout, { user, token_file: join(tokenDir, `${user}.jwt`), base_url: baseUrl, oidc });
+  return loadIdentity(checkout);
 }
 
 /** Serves the loopback callback until one carries this state, opens the browser, resolves the code. */

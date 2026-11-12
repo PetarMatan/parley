@@ -141,10 +141,9 @@ fi
 # ---- code: main and one branch per scenario -----------------------------------------
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 REMOTE_URL="https://root:$TOKEN@gitlab.$DOMAIN/$FULL.git"
+# The project commits nothing of Parley but .aic/policy.json: the channel
+# server, the hooks and the review skills come from the installed plugin (D49).
 rsync -a --exclude scenarios --exclude '.go' "$SERVICE_DIR/" "$WORK/"
-# The review skills travel with the project on main: the quarantine restores
-# .claude/ from the target branch, so untracked copies would never reach it.
-bash "$REPO_DIR/skills/install.sh" "$WORK" >/dev/null
 git -C "$WORK" init -q -b main
 git -C "$WORK" add -A
 git -C "$WORK" commit -q -m "orders-service: initial import"

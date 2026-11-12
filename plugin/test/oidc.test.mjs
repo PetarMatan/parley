@@ -190,9 +190,9 @@ async function loginProvider(user) {
   return { srv, issuer: `http://127.0.0.1:${srv.address().port}/realm` };
 }
 
-function startLogin(dir, issuer, port) {
+function startLogin(dir, issuer, port, extra = []) {
   const p = spawn(process.execPath, [LOGIN, '--checkout', dir, '--no-open', '--issuer', issuer, '--client-id', 'aic-cli',
-    '--port', String(port), '--identity-claim', 'preferred_username'], { env: { ...process.env, AIC_OIDC_ISSUER: '', AIC_OIDC_CLIENT_ID: '' } });
+    '--port', String(port), '--identity-claim', 'preferred_username', ...extra], { env: { ...process.env, AIC_OIDC_ISSUER: '', AIC_OIDC_CLIENT_ID: '', AIC_TOKEN_DIR: '' } });
   let out = '';
   const url = new Promise((resolve) => p.stderr.on('data', (d) => {
     out += d;
@@ -246,4 +246,49 @@ test('login.mjs: a token for another user is refused and the old token stays', a
   assert.match(r.out, /signed in as alice, but this checkout belongs to bob\. Nothing was written/);
   assert.equal(readFileSync(join(dir, 'tok.jwt'), 'utf8'), 'bob-old\n');
   assert.equal(existsSync(join(dir, 'tok.jwt.refresh')), false);
+});
+
+test('login.mjs: a checkout without an identity is created from the channel, issuer and client id, for the user the token names (D50)', async (t) => {
+  const { srv, issuer } = await loginProvider('alice');
+  t.after(() => srv.close());
+  const dir = mkdtempSync(join(tmpdir(), 'aic-login-'));
+  const tokens = join(dir, 'tokens');
+  const port = await freePort();
+  const { url, done } = startLogin(dir, issuer, port, ['--base-url', 'https://channel.example.test/', '--token-dir', tokens]);
+  const state = (await url).searchParams.get('state');
+  await fetch(`http://127.0.0.1:${port}/callback?state=${encodeURIComponent(state)}&code=c1`);
+  const r = await done;
+  assert.equal(r.code, 0, r.out);
+  const id = JSON.parse(readFileSync(join(dir, '.aic', 'identity.json'), 'utf8'));
+  assert.deepEqual(id, {
+    user: 'alice', token_file: join(tokens, 'alice.jwt'), base_url: 'https://channel.example.test/',
+    oidc: { issuer, client_id: 'aic-cli', identity_claim: 'preferred_username', redirect_port: port },
+  }, 'the settings given are kept, defaults are left out of the oidc block');
+  assert.match(readFileSync(join(tokens, 'alice.jwt'), 'utf8'), /^eyJ/);
+  assert.equal(readFileSync(join(tokens, 'alice.jwt.refresh'), 'utf8'), 'r1\n');
+  assert.match(r.out, /identity\.json written for alice/);
+
+  // A second login in the same checkout keeps the identity and refuses another user.
+  const { srv: srv2, issuer: issuer2 } = await loginProvider('bob');
+  t.after(() => srv2.close());
+  const port2 = await freePort();
+  const again = startLogin(dir, issuer2, port2);
+  const state2 = (await again.url).searchParams.get('state');
+  await fetch(`http://127.0.0.1:${port2}/callback?state=${encodeURIComponent(state2)}&code=c1`);
+  const r2 = await again.done;
+  assert.equal(r2.code, 1);
+  assert.match(r2.out, /signed in as bob, but this checkout belongs to alice/);
+});
+
+test('login.mjs: without an identity and without the three values, nothing is written', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aic-login-'));
+  const r = await new Promise((resolve) => {
+    const p = spawn(process.execPath, [LOGIN, '--checkout', dir, '--no-open', '--issuer', 'https://x', '--client-id', 'c'], { env: { ...process.env, AIC_OIDC_ISSUER: '', AIC_OIDC_CLIENT_ID: '' } });
+    let out = '';
+    p.stderr.on('data', (d) => { out += d; });
+    p.on('close', (code) => resolve({ code, out }));
+  });
+  assert.equal(r.code, 1);
+  assert.match(r.out, /identity\.json missing; pass --base-url, --issuer and --client-id/);
+  assert.equal(existsSync(join(dir, '.aic')), false);
 });

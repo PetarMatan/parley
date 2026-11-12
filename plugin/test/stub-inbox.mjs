@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export const TOKEN = 'test-token';
+/** The round cap the stub reports on /healthz, listings and post results (D47). */
+export const MAX_ROUNDS = 10;
 
 export function envelope(overrides = {}, payload = {}) {
   return {
@@ -28,26 +30,31 @@ export function envelope(overrides = {}, payload = {}) {
  * conversation for GET /v1/contexts/{id} (404 otherwise). onStream(res, n)
  * runs for the n-th SSE connection. Every request is recorded in calls.
  */
-export async function startStub({ inbox = [], contexts = {}, onStream } = {}) {
+export async function startStub({ inbox = [], contexts = {}, onStream, requireRegistration = false } = {}) {
   const calls = [];
   let streams = 0;
+  const registered = new Set(); // session ids seen on PUT; the stream needs one when requireRegistration
   const server = createServer(async (req, res) => {
     let body = '';
     for await (const c of req) body += c;
     const call = { method: req.method, url: req.url, auth: req.headers.authorization, body: body ? JSON.parse(body) : null };
     calls.push(call);
+    if (req.method === 'GET' && req.url === '/healthz') return json(res, 200, { ok: true, max_rounds: MAX_ROUNDS });
     if (req.headers.authorization !== `Bearer ${TOKEN}`) return json(res, 401, { error: { code: 'unauthorized', message: 'no' } });
     const u = new URL(req.url, 'http://x');
-    if (req.method === 'PUT' && u.pathname.startsWith('/v1/sessions/')) return json(res, 200, { ok: true });
+    if (req.method === 'PUT' && u.pathname.startsWith('/v1/sessions/')) { registered.add(decodeURIComponent(u.pathname.split('/')[3])); return json(res, 200, { ok: true }); }
     if (req.method === 'DELETE' && u.pathname.startsWith('/v1/sessions/')) { res.writeHead(204).end(); return; }
-    if (req.method === 'GET' && u.pathname === '/v1/inbox') return json(res, 200, { messages: inbox });
+    if (req.method === 'GET' && u.pathname === '/v1/inbox') return json(res, 200, { messages: inbox, max_rounds: MAX_ROUNDS });
     if (req.method === 'GET' && u.pathname.startsWith('/v1/contexts/')) {
       const conv = contexts[decodeURIComponent(u.pathname.slice('/v1/contexts/'.length))];
       return conv ? json(res, 200, conv) : json(res, 404, { error: { code: 'not_found', message: u.pathname } });
     }
     if (req.method === 'POST' && /^\/v1\/messages\/[^/]+\/ack$/.test(u.pathname)) { res.writeHead(204).end(); return; }
-    if (req.method === 'POST' && u.pathname === '/v1/messages') return json(res, 201, { message_id: 'm-NEW', round: 1, delivered: 'queued' });
+    if (req.method === 'POST' && u.pathname === '/v1/messages') return json(res, 201, { message_id: 'm-NEW', round: 1, max_rounds: MAX_ROUNDS, delivered: 'queued' });
     if (req.method === 'GET' && u.pathname.endsWith('/events')) {
+      if (requireRegistration && !registered.has(decodeURIComponent(u.pathname.split('/')[3]))) {
+        return json(res, 404, { error: { code: 'session_not_found', message: 'register the session first' } });
+      }
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
       res.write(': ping\n\n');
       return onStream ? onStream(res, ++streams) : undefined;
