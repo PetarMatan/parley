@@ -72,6 +72,7 @@ Build, test, and bring up the sandbox:
 git clone https://github.com/PetarMatan/parley.git
 cd parley
 (cd plugin && npm ci)
+claude plugin marketplace add "$PWD" && claude plugin install parley@parley   # the channel server, hooks and skills, once per machine
 make build        # Go binaries into work/bin
 make test         # Go and Node test suites
 make setup        # keys, mock tokens, a bare origin, two clones, one fake merge request
@@ -83,7 +84,7 @@ Then open two sessions, one per clone, and follow the four-step experiment in th
 
 ## Using the channel
 
-Each session gets the channel through a local MCP server started from the checkout's `.mcp.json`. The server exposes these tools to the agent:
+Each session gets the channel through the installed `parley` plugin: its MCP server starts with the session, and a project commits nothing for it but `.aic/policy.json`. The server exposes these tools to the agent (as `mcp__plugin_parley_aic-inbox__<tool>`):
 
 | Tool | What it does |
 |---|---|
@@ -93,8 +94,9 @@ Each session gets the channel through a local MCP server started from the checko
 | `inbox_ack` | Acknowledges a handled message so it is never delivered twice |
 | `inbox_note` | Writes an outcome note to the work item's record |
 | `inbox_promote` | Asks the promoter to push the current commit after its checks |
+| `inbox_history` | Reads the record of one work item, on the person's request: its tasks, and one task's messages as data |
 
-Two skills drive the review kind: `review-send` on the sending side and `review-handle` on the receiving side. They live in `skills/` and are installed into the sandbox clones by `make setup`.
+Three skills ship in the plugin: `parley:review-send` on the sending side, `parley:review-handle` on the receiving side, and `parley:login`, which takes the channel URL, the issuer and the client id, opens the browser for the sign-in and writes the checkout's identity for the person the token names.
 
 Hooks shipped with the plugin register the session with the inbox at start, refresh the registration when the working directory changes, pull queued messages, and withdraw the session at end.
 
@@ -108,11 +110,11 @@ Settings are environment variables with the `AIC_` prefix. The ones most people 
 | `AIC_BASE_URL` | plugin, hooks | Inbox URL as seen through the gateway (default `http://localhost:3000`) |
 | `AIC_INBOX_ADDR` | inbox | Listen address of the inbox service (default `127.0.0.1:7070`) |
 | `AIC_ISSUERS` | inbox | JSON array of accepted token issuers; see [Identity providers](#identity-providers) |
-| `AIC_MAX_ROUNDS` | inbox | Round cap per task (default 5) |
+| `AIC_MAX_ROUNDS` | inbox | Round cap per task (default 10). The inbox is its only source: it reports it on `/healthz`, on every post result and listing, and the plugin puts it on every channel tag |
 | `AIC_EXTRA_GUARD` | quarantine | Optional extra PreToolUse hook command for an organization's own guard |
 | `AIC_CHECKOUT` | plugin, hooks | Overrides the search for the checkout's `.aic/identity.json` |
 
-Per checkout, `.aic/identity.json` names the person, the token file, the inbox URL, and the OIDC login settings. `.aic/policy.json` holds the authority ceiling per finding class and the round and patch-size limits. The full API is specified in [inbox/openapi.yaml](inbox/openapi.yaml) and the message rules in [docs/contract.md](docs/contract.md).
+Per checkout, `.aic/identity.json` names the person, the token file, the inbox URL, and the OIDC login settings; the login writes it. `.aic/policy.json`, committed by the project, holds the authority ceiling per finding class and the patch-size limit. The full API is specified in [inbox/openapi.yaml](inbox/openapi.yaml) and the message rules in [docs/contract.md](docs/contract.md).
 
 ## Identity providers
 
@@ -137,7 +139,7 @@ Steering another person's agent with text written by a model is prompt injection
 - **Quarantine.** Isolated worktree, scrubbed environment, no network, a guard hook that denies edits outside the change and to configuration, dependency, and lock files.
 - **A program does the risky steps.** Only the promoter pushes, after fixed checks. Approve and merge never leave a person.
 - **Human gates by reversibility.** No gate for worktree edits; the promoter or a person for a push; always a person for approve and merge.
-- **Detection and audit.** Injection scoring, every message and promotion logged with its sender, a canary suite of twelve attacks in `canaries/`.
+- **Detection and audit.** Injection scoring, every message and promotion logged with its sender, a canary suite of thirteen attacks in `canaries/`.
 
 The residual risk, and the evidence behind each layer, are in section 8 of the design record.
 
@@ -152,11 +154,11 @@ Candidate next kinds, not built: ticket-readiness questions, deploy-verification
 | Path | Contents |
 |---|---|
 | `inbox/` | Go inbox service, token minting tool, promoter; standard library only |
-| `plugin/` | Node 22 channel plugin: MCP channel server, hooks, OIDC login |
+| `plugin/` | The Claude Code plugin `parley` (Node 22): MCP channel server, hooks, OIDC login, the skills of the review kind |
+| `.claude-plugin/` | Marketplace file: this repository is the plugin's marketplace |
 | `quarantine/` | Quarantine worktree script, tool-use guard, settings overlay |
 | `schema/` | Message schemas (JSON Schema) and generated test vectors shared by both validators |
-| `skills/` | Skills of the review kind: `review-send`, `review-handle` |
-| `canaries/` | Twelve poisoned-message cases and their runner |
+| `canaries/` | Thirteen poisoned-message cases and their runner |
 | `gateway/` | agentgateway configuration and its validation script |
 | `deploy/local/` | Compose file and DEX configuration of the local one-machine sandbox |
 | `deploy/cloud/` | Compose bundle for a shared host: reverse proxy, Keycloak, GitLab CE, agentgateway, inbox (testbed plan) |
@@ -166,6 +168,7 @@ Candidate next kinds, not built: ticket-readiness questions, deploy-verification
 
 ## Documentation
 
+- [VISION.md](VISION.md): what Parley is for, the premise it rests on, and the rules every decision must pass.
 - [parley-design.md](parley-design.md): design record, risks, control layers, open questions.
 - [parley-poc.md](parley-poc.md): proof-of-concept plan, test plan, canary suite.
 - [parley-testbed.md](parley-testbed.md): plan for a testbed on real architecture: Keycloak, self-hosted GitLab, a cloud host, two laptops.
@@ -193,14 +196,31 @@ The canary runner has two modes: `--mode inbox` is deterministic and needs no mo
 
 ## Roadmap and known gaps
 
-The proof of concept answered its three questions: a message travels between two people's sessions, the envelope held against the canaries, and the spike checks ran. Open points found in live runs are recorded as decisions D30 to D40, among them:
+The proof of concept answered its three questions: a message travels between two people's sessions, the envelope held against the canaries, and the spike checks ran. The testbed on real architecture ([parley-testbed.md](parley-testbed.md)) is running: scenarios S1 (fix and push), S2 (a wrong finding is disputed), S3 (a product decision goes to the author), S4 to S6 (three kinds of outsider are refused as senders), S10 (a fix in a blocked file is refused by the agent, the guard and the promoter), S11 (a message waits for a closed session and starts its turn), S7 (expired token refused, refresh before expiry), S8 (a person disabled in Keycloak loses the channel at token expiry, T45), S9 (the round cap ends a task that does not converge and the inbox records both positions, D45; re-run with D47 and D48: a fresh session recovers a task from the inbox and reads the cap from it) and S12 (the canary suite through the real gateway) passed. The one-laptop catalogue is complete. Each run is recorded in [docs/runbook.md](docs/runbook.md), section "Testbed scenario results".
 
-- A dropped channel event is still acknowledged, so a message can be lost (D30).
+Closed by the testbed so far:
+
+- A message that waited while the session was closed now starts a turn by itself (D39, closed by D41).
+- A message is acknowledged only when the session transcript shows that it reached the model, so a dropped channel event no longer loses it (D30, closed by D42).
+- The login refuses a token for the wrong person (D43). The author's agent disputes a finding about a change the merge request makes on purpose (D44).
+- The inbox is the only source of the round cap, on every channel tag and every result (D46, closed by D47). A session that has not seen a task reads it from the inbox on the person's request with `inbox_history` (D48).
+- The round cap is a loop breaker, default 10; when the last round does not settle a task the inbox fails it, tells both sides and records both positions on the merge request (D40, closed by D45).
+- The plugin is a Claude Code plugin installed on its own, with the hooks and the skills inside, so a second laptop needs no copy of this repository (D49); the login writes the checkout's identity from one pasted line (D50); the project commits only its policy file, and a GitLab token per person comes from one script (D51). Verified live on 2026-11-12 with a re-run of S10; a session whose registration failed now registers itself before the stream retries (D52).
+
+Open, recorded as decisions:
+
+- A human-approved escalation has no path to the promoter; the author pushes by hand (D36, seen again in S3).
 - The promoter pushes every commit in the range, not only the promoted task's (D34).
-- A human-approved escalation has no path to the promoter (D36).
-- The round cap is reached by self-limiting agents, so the inbox never escalates (D40).
+- The guard misreads heredoc writes (D37).
 
-Next step: a testbed on real architecture, planned in [parley-testbed.md](parley-testbed.md). Beyond the review kind: a second conversation kind (P20), a server-side CI sender, permission relay to a phone or chat, and A2A conformance so a non-Claude agent can join.
+Found on the testbed, not yet decided:
+
+- The quarantine worktree inherits the clone's git credential helper. Whether the agent can reach that credential is untested.
+- The author builds the quarantine by hand. A one-step command is planned after the testing.
+- Live delivery needs Claude Code's channel flag at every start (research preview). Without it, waiting messages arrive at session start only.
+- A person disabled in the identity provider keeps the channel until the access token expires, five minutes plus skew (T45).
+
+Next: a second laptop, headless agents for scripted runs, and hardening (T7, D34, D36). Beyond the review kind: a second conversation kind (P20), a server-side CI sender, permission relay to a phone or chat, and A2A conformance so a non-Claude agent can join.
 
 ## Contributing
 
