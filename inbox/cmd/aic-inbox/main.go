@@ -15,7 +15,7 @@
 //	                   fetched on first use; its issuer must match.
 //	                   Default: mock issuer (JWKS file) and the local OIDC
 //	                   provider of the sandbox (DEX, JWKS URL)
-//	AIC_MAX_ROUNDS     round cap, default 5
+//	AIC_MAX_ROUNDS     round cap, default 10
 //	AIC_SERVICE_USERS  comma list allowed to post notes on any MR, default promoter@aic.local
 //	AIC_MR_PROVIDER    "local" (default: $AIC_WORK/mr/<iid>.json and a bare repo) or
 //	                   "gitlab" (GitLab REST API; <repo> is the project path)
@@ -64,7 +64,7 @@ func run() error {
 		return err
 	}
 	addr := env("AIC_INBOX_ADDR", "127.0.0.1:7070")
-	maxRounds, err := strconv.Atoi(env("AIC_MAX_ROUNDS", "5"))
+	maxRounds, err := strconv.Atoi(env("AIC_MAX_ROUNDS", "10"))
 	if err != nil || maxRounds < 1 {
 		return fmt.Errorf("AIC_MAX_ROUNDS must be a positive integer")
 	}

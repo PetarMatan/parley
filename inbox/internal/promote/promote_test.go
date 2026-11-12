@@ -65,7 +65,7 @@ func writeFile(t *testing.T, dir, rel, s string) {
 	}
 }
 
-const policyL2 = `{"ceiling":{"fact":"L2","taste":"L0","product":"L0"},"max_rounds":5,"max_patch_lines":400}`
+const policyL2 = `{"ceiling":{"fact":"L2","taste":"L0","product":"L0"},"max_patch_lines":400}`
 
 // newEnv builds $AIC_WORK with a bare origin (main, feature/discount), the MR
 // file, clone-b and a quarantine worktree at the MR head. The MR diff is
@@ -221,7 +221,7 @@ func TestBlockedFileRefused(t *testing.T) {
 
 func TestTooManyLinesRefused(t *testing.T) {
 	e := newEnv(t)
-	writeFile(t, e.work, "quarantine/1/policy.json", `{"ceiling":{"fact":"L2"},"max_rounds":5,"max_patch_lines":5}`)
+	writeFile(t, e.work, "quarantine/1/policy.json", `{"ceiling":{"fact":"L2"},"max_patch_lines":5}`)
 	before := e.originHead()
 	e.commit("src/discount.js", strings.Repeat("export const x = 1;\n", 10))
 	r := e.run()
@@ -250,7 +250,7 @@ func TestSecretRefused(t *testing.T) {
 
 func TestCeilingL1Refused(t *testing.T) {
 	e := newEnv(t)
-	writeFile(t, e.work, "quarantine/1/policy.json", `{"ceiling":{"fact":"L1","taste":"L0","product":"L0"},"max_rounds":5,"max_patch_lines":400}`)
+	writeFile(t, e.work, "quarantine/1/policy.json", `{"ceiling":{"fact":"L1","taste":"L0","product":"L0"},"max_patch_lines":400}`)
 	before := e.originHead()
 	e.commit("src/discount.js", "export const a = 3;\n")
 	r := e.run()
@@ -465,7 +465,7 @@ func TestSecretOnPlusPlusLineRefused(t *testing.T) {
 
 func TestPolicyInWorktreeIgnored(t *testing.T) {
 	e := newEnv(t)
-	writeFile(t, e.work, "quarantine/1/policy.json", `{"ceiling":{"fact":"L0"},"max_rounds":5,"max_patch_lines":400}`)
+	writeFile(t, e.work, "quarantine/1/policy.json", `{"ceiling":{"fact":"L0"},"max_patch_lines":400}`)
 	writeFile(t, e.wt, ".aic/policy.json", policyL2)
 	before := e.originHead()
 	e.commit("src/discount.js", "export const a = 3;\n")

@@ -248,6 +248,7 @@ func reply(ctx, task, kind string) map[string]any {
 type posted struct {
 	MessageID string `json:"message_id"`
 	Round     int    `json:"round"`
+	MaxRounds int    `json:"max_rounds"`
 	Delivered string `json:"delivered"`
 }
 
@@ -272,7 +273,8 @@ type conversation struct {
 		TaskID, State, Class, Sender, Addressee string
 		Round                                   int
 	} `json:"tasks"`
-	Messages []store.Envelope `json:"messages"`
+	Messages  []store.Envelope `json:"messages"`
+	MaxRounds int              `json:"max_rounds"`
 }
 
 func (f *fixture) context(user, ctx string) conversation {
@@ -285,6 +287,9 @@ func (f *fixture) context(user, ctx string) conversation {
 	if err := json.Unmarshal(r.body, &c); err != nil {
 		f.t.Fatal(err)
 	}
+	if c.MaxRounds < 1 {
+		f.t.Fatalf("conversation carries no max_rounds: %s", r.body)
+	}
 	return c
 }
 
@@ -294,8 +299,14 @@ func (f *fixture) inbox(user, repo string) []store.Envelope {
 	if r.status != 200 {
 		f.t.Fatalf("inbox: %d %s", r.status, r.body)
 	}
-	var out struct{ Messages []store.Envelope }
+	var out struct {
+		Messages  []store.Envelope `json:"messages"`
+		MaxRounds int              `json:"max_rounds"`
+	}
 	_ = json.Unmarshal(r.body, &out)
+	if out.MaxRounds < 1 {
+		f.t.Fatalf("inbox listing carries no max_rounds: %s", r.body)
+	}
 	return out.Messages
 }
 
@@ -395,7 +406,7 @@ func TestRegisterStreamPush(t *testing.T) {
 	b := f.open(userB, "s-b")
 
 	p := f.post(userA, finding(shop, "f-00000001", "src/discount.js"), nil)
-	if p.Delivered != "pushed" || p.Round != 1 || !strings.HasPrefix(p.MessageID, "m-") {
+	if p.Delivered != "pushed" || p.Round != 1 || p.MaxRounds != 5 || !strings.HasPrefix(p.MessageID, "m-") {
 		t.Fatalf("post result: %+v", p)
 	}
 	env := b.next(t)
@@ -846,4 +857,102 @@ func TestRestartRequeuesPushed(t *testing.T) {
 			t.Fatalf("restart left state %s", d.Messages[0].Envelope.State)
 		}
 	})
+}
+
+// D45: the last allowed round spent on a non-closing reply marks the task
+// failed, tells both sides and posts the note; the reply itself is accepted.
+func TestRoundExhaustedAtLastRound(t *testing.T) {
+	f := newFixture(t, 3)
+	f.register(userA, "s-a", "local/shop", "main")
+	f.registerQ(userB, "s-b", "local/shop", "feature/discount")
+	a, b := f.open(userA, "s-a"), f.open(userB, "s-b")
+
+	task := "f-0000ab01"
+	f.post(userA, finding(shop, task, "src/discount.js"), nil) // round 1
+	b.next(t)
+	f.post(userB, reply(shop, task, "disputed"), nil) // round 2
+	a.next(t)
+	p := f.post(userA, reply(shop, task, "answer"), nil) // round 3 = max, not closing
+	if p.Round != 3 {
+		t.Fatalf("round 3 accepted: %+v", p)
+	}
+	if e := b.next(t); e.Round != 3 || e.From != userA {
+		t.Fatalf("round 3 delivered: %+v", e)
+	}
+	for _, c := range []*sseClient{a, b} {
+		e := c.next(t)
+		var pl map[string]any
+		_ = json.Unmarshal(e.Payload, &pl)
+		if e.From != "aic-inbox" || e.Round != 4 || pl["kind"] != "escalated" || !strings.Contains(pl["note"].(string), "without a conclusion") {
+			t.Fatalf("system envelope: %+v %v", e, pl)
+		}
+	}
+	c := f.context(userA, shop)
+	if c.Tasks[0].State != "failed" || c.Tasks[0].Round != 3 {
+		t.Fatalf("task after exhaustion: %+v", c.Tasks[0])
+	}
+	notes, err := os.ReadFile(filepath.Join(f.work, "mr", "1.notes.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"without a conclusion", "State `failed`", "**" + userA + "**", "**" + userB + "**", "(round 3, answer)", "(round 2, disputed)"} {
+		if !strings.Contains(string(notes), want) {
+			t.Fatalf("MR note lacks %q:\n%s", want, notes)
+		}
+	}
+	if r := f.do("POST", "/v1/messages", userB, reply(shop, task, "disputed")); r.status != 409 || r.errCode() != "round_limit" {
+		t.Fatalf("message after exhaustion: %d %s", r.status, r.body)
+	}
+	if !strings.Contains(f.logs.String(), `"outcome":"exhausted"`) {
+		t.Fatal("exhausted not logged")
+	}
+}
+
+func TestRoundExhaustedWithEscalation(t *testing.T) {
+	f := newFixture(t, 2)
+	f.register(userA, "s-a", "local/shop", "main")
+	f.registerQ(userB, "s-b", "local/shop", "feature/discount")
+	a, b := f.open(userA, "s-a"), f.open(userB, "s-b")
+
+	task := "f-0000ab02"
+	f.post(userA, finding(shop, task, "src/discount.js"), nil) // round 1
+	b.next(t)
+	f.post(userB, reply(shop, task, "escalated"), nil) // round 2 = max, a person decides on B's side
+	if e := a.next(t); e.Round != 2 || e.From != userB {
+		t.Fatalf("round 2 delivered: %+v", e)
+	}
+	if e := a.next(t); e.From != "aic-inbox" || e.Round != 3 {
+		t.Fatalf("system envelope to the finding sender: %+v", e)
+	}
+	b.none(t) // the author's side already has the person in the loop
+	c := f.context(userA, shop)
+	if c.Tasks[0].State != "input-required" || c.Tasks[0].Round != 2 {
+		t.Fatalf("task: %+v", c.Tasks[0])
+	}
+	notes, err := os.ReadFile(filepath.Join(f.work, "mr", "1.notes.md"))
+	if err != nil || !strings.Contains(string(notes), "State `input-required`") {
+		t.Fatalf("MR note: %v %s", err, notes)
+	}
+}
+
+func TestRoundClosedAtLastRound(t *testing.T) {
+	f := newFixture(t, 2)
+	f.register(userA, "s-a", "local/shop", "main")
+	f.registerQ(userB, "s-b", "local/shop", "feature/discount")
+	a, b := f.open(userA, "s-a"), f.open(userB, "s-b")
+
+	task := "f-0000ab03"
+	f.post(userA, finding(shop, task, "src/discount.js"), nil) // round 1
+	b.next(t)
+	f.post(userB, reply(shop, task, "fixed"), nil) // round 2 = max, closes the task
+	a.next(t)
+	a.none(t)
+	b.none(t)
+	c := f.context(userA, shop)
+	if c.Tasks[0].State != "completed" {
+		t.Fatalf("task: %+v", c.Tasks[0])
+	}
+	if _, err := os.ReadFile(filepath.Join(f.work, "mr", "1.notes.md")); err == nil {
+		t.Fatal("no note expected for a task that closed on the last round")
+	}
 }

@@ -61,7 +61,7 @@ type Server struct {
 // queued, because no stream survives a restart.
 func New(cfg Config, st *store.Store, mrs mr.Provider, ver Verifier, log *logx.Logger) (*Server, error) {
 	if cfg.MaxRounds <= 0 {
-		cfg.MaxRounds = 5
+		cfg.MaxRounds = 10
 	}
 	if cfg.PingInterval <= 0 {
 		cfg.PingInterval = 15 * time.Second
@@ -82,7 +82,7 @@ func New(cfg Config, st *store.Store, mrs mr.Provider, ver Verifier, log *logx.L
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "max_rounds": s.cfg.MaxRounds})
 	})
 	route := func(pattern, event string, h func(http.ResponseWriter, *http.Request, *reqLog) error) {
 		mux.Handle(pattern, s.wrap(event, h))

@@ -95,11 +95,12 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [messages]
+                required: [messages, max_rounds]
                 properties:
                   messages:
                     type: array
                     items: { $ref: '#/components/schemas/Envelope' }
+                  max_rounds: { type: integer, minimum: 1, description: Round cap per task; the inbox is its only source (D47). }
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
   /v1/messages:
@@ -280,10 +281,11 @@ components:
         last_active: { type: string, format: date-time }
     PostResult:
       type: object
-      required: [message_id, round, delivered]
+      required: [message_id, round, max_rounds, delivered]
       properties:
         message_id: { type: string }
         round: { type: integer, minimum: 1 }
+        max_rounds: { type: integer, minimum: 1, description: Round cap per task; the inbox is its only source (D47). }
         delivered: { enum: [pushed, queued] }
     Envelope:
       $ref: '../schema/envelope.v1.json'
@@ -300,9 +302,10 @@ components:
         updated_at: { type: string, format: date-time }
     Conversation:
       type: object
-      required: [context_id, participants, tasks, messages]
+      required: [context_id, participants, tasks, messages, max_rounds]
       properties:
         context_id: { type: string }
+        max_rounds: { type: integer, minimum: 1, description: Round cap per task; the inbox is its only source (D47). }
         participants:
           type: array
           items: { type: string }

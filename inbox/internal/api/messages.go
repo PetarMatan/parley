@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/PetarMatan/parley/inbox/internal/logx"
 	"github.com/PetarMatan/parley/inbox/internal/mr"
@@ -13,9 +14,12 @@ import (
 	"github.com/PetarMatan/parley/inbox/internal/store"
 )
 
+// max_rounds travels with every post result and every inbox listing so the
+// agent reads the cap from the inbox alone (D47).
 type postResult struct {
 	MessageID string `json:"message_id"`
 	Round     int    `json:"round"`
+	MaxRounds int    `json:"max_rounds"`
 	Delivered string `json:"delivered"`
 }
 
@@ -43,6 +47,7 @@ func (s *Server) postMessage(w http.ResponseWriter, r *http.Request, rl *reqLog)
 	if err != nil {
 		return err
 	}
+	res.MaxRounds = s.cfg.MaxRounds
 	writeJSON(w, http.StatusCreated, res)
 	return nil
 }
@@ -116,6 +121,8 @@ func (s *Server) postReply(r *http.Request, rl *reqLog, b []byte) (postResult, e
 
 	var res postResult
 	var capped *store.Task
+	var exhausted *store.Task
+	var exhaustedNote string
 	err = s.st.Update(func(d *store.Data) error {
 		ctx := d.Contexts[rp.ContextID]
 		var t *store.Task
@@ -156,6 +163,29 @@ func (s *Server) postReply(r *http.Request, rl *reqLog, b []byte) (postResult, e
 		s.dispatch(d, msg)
 		rl.messageID = msg.Envelope.MessageID
 		res = postResult{MessageID: msg.Envelope.MessageID, Round: round, Delivered: msg.Envelope.State}
+		// The last allowed round was spent without closing the task (D45). The
+		// skills never send round max_rounds+1, so this is the moment the inbox
+		// knows the channel cannot settle it. The reply above is kept and
+		// delivered; then the task is marked and both sides are told.
+		if round == s.cfg.MaxRounds {
+			switch t.State {
+			case store.TaskWorking:
+				t.State = store.TaskFailed
+				for _, p := range uniq(t.Sender, t.Addressee) {
+					sys := s.systemExhausted(rp.ContextID, t.ID, false)
+					s.dispatch(d, s.appendMessage(d, ctx, t.ID, round+1, SystemSender, p, sys, rules.Tags{Stripped: []string{}}))
+				}
+			case store.TaskInputRequired:
+				// A person is already deciding on the author's side; tell the other side the channel is closed for this task.
+				sys := s.systemExhausted(rp.ContextID, t.ID, true)
+				s.dispatch(d, s.appendMessage(d, ctx, t.ID, round+1, SystemSender, to, sys, rules.Tags{Stripped: []string{}}))
+			default:
+				return nil // fixed, accepted, withdrawn: the task closed on the last round
+			}
+			c := *t
+			exhausted = &c
+			exhaustedNote = s.exhaustedNote(d, t, round)
+		}
 		return nil
 	})
 	if err != nil {
@@ -170,6 +200,12 @@ func (s *Server) postReply(r *http.Request, rl *reqLog, b []byte) (postResult, e
 		s.log.Warn(logx.Fields{"event": "round_limit", "sender": sender, "context_id": rp.ContextID, "task_id": capped.ID, "outcome": "refused"})
 		return postResult{}, apiErr(http.StatusConflict, "round_limit", "round %d exceeds the limit of %d; the task is failed", capped.Round+1, s.cfg.MaxRounds)
 	}
+	if exhausted != nil {
+		if err := s.mrs.PostNote(m, SystemSender, exhaustedNote); err != nil {
+			s.log.Error(logx.Fields{"event": "mr_note_failed", "context_id": rp.ContextID, "task_id": exhausted.ID, "detail": err.Error()})
+		}
+		s.log.Warn(logx.Fields{"event": "round_limit", "sender": sender, "context_id": rp.ContextID, "task_id": exhausted.ID, "state": exhausted.State, "outcome": "exhausted"})
+	}
 	return res, nil
 }
 
@@ -180,6 +216,60 @@ func (s *Server) systemEscalation(contextID, taskID, refusedSender string, round
 			s.cfg.MaxRounds, round, refusedSender),
 	})
 	return b
+}
+
+// systemExhausted is the envelope sent when the last allowed round did not
+// close the task. withPerson: the author's agent escalated on that round, so
+// a person is already deciding there.
+func (s *Server) systemExhausted(contextID, taskID string, withPerson bool) json.RawMessage {
+	note := fmt.Sprintf("Round limit of %d reached without a conclusion. The task is failed; the channel is closed for it. The people decide directly and record the outcome on the merge request.", s.cfg.MaxRounds)
+	if withPerson {
+		note = fmt.Sprintf("Round limit of %d reached. The author's agent escalated on the last round, so the author decides. The channel is closed for this task; the outcome goes on the merge request.", s.cfg.MaxRounds)
+	}
+	b, _ := json.Marshal(rules.Reply{Schema: "reply.v1", ContextID: contextID, TaskID: taskID, Kind: "escalated", Note: note})
+	return b
+}
+
+// exhaustedNote is the merge request note for a task that spent its last
+// round: the state and the last position of each side, from the stored
+// cleaned text, so nobody has to write the status by hand.
+func (s *Server) exhaustedNote(d *store.Data, t *store.Task, round int) string {
+	last := map[string]*store.Message{}
+	for _, m := range d.Messages {
+		if m.Envelope.TaskID == t.ID && m.Envelope.From != SystemSender {
+			last[m.Envelope.From] = m
+		}
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "**aic-inbox:** task `%s` reached the round limit of %d without a conclusion (round %d). State `%s`. The channel is closed for this task; the people decide directly and record the outcome here.\n",
+		t.ID, s.cfg.MaxRounds, round, t.State)
+	for _, p := range uniq(t.Sender, t.Addressee) {
+		m := last[p]
+		if m == nil {
+			continue
+		}
+		var pl struct {
+			Kind  string `json:"kind"`
+			Title string `json:"title"`
+			Note  string `json:"note"`
+		}
+		_ = json.Unmarshal(m.Envelope.Payload, &pl)
+		head := pl.Kind
+		if head == "" {
+			head = "finding: " + pl.Title
+		}
+		fmt.Fprintf(&sb, "\n- **%s** (round %d, %s): %s", p, m.Envelope.Round, head, excerpt(pl.Note, 300))
+	}
+	return sb.String()
+}
+
+func excerpt(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 // noteSession records the caller's session (from SessionHeader) for reply
@@ -248,7 +338,7 @@ func (s *Server) listInbox(w http.ResponseWriter, r *http.Request, rl *reqLog) e
 			}
 		}
 	})
-	writeJSON(w, http.StatusOK, map[string]any{"messages": out})
+	writeJSON(w, http.StatusOK, map[string]any{"messages": out, "max_rounds": s.cfg.MaxRounds})
 	return nil
 }
 
@@ -346,7 +436,8 @@ func (s *Server) getContext(w http.ResponseWriter, r *http.Request, rl *reqLog) 
 		Participants []string         `json:"participants"`
 		Tasks        []taskView       `json:"tasks"`
 		Messages     []store.Envelope `json:"messages"`
-	}{ContextID: cid, Participants: []string{}, Tasks: []taskView{}, Messages: []store.Envelope{}}
+		MaxRounds    int              `json:"max_rounds"`
+	}{ContextID: cid, Participants: []string{}, Tasks: []taskView{}, Messages: []store.Envelope{}, MaxRounds: s.cfg.MaxRounds}
 	s.st.View(func(d *store.Data) {
 		ctx := d.Contexts[cid]
 		if ctx == nil {

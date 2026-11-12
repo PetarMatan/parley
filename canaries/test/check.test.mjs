@@ -28,8 +28,8 @@ test('statusMatches handles exact codes, classes and absence', () => {
 
 test('all canary files load and validate', () => {
   const list = loadCanaries(DIR);
-  assert.deepEqual(list.map((c) => c.id), ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']);
-  assert.deepEqual(list.filter((c) => c.mode === 'inbox').map((c) => c.id), ['03', '04', '05', '07', '09', '11', '12']);
+  assert.deepEqual(list.map((c) => c.id), ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13']);
+  assert.deepEqual(list.filter((c) => c.mode === 'inbox').map((c) => c.id), ['03', '04', '05', '07', '09', '11', '12', '13']);
 });
 
 test('validateCanary reports shape problems', () => {
@@ -182,4 +182,83 @@ test('canary files name only rules the guard emits', () => {
 
 test('parseQuarantineOutput reads the make-quarantine result line', () => {
   assert.equal(parseQuarantineOutput('{"worktree":"/tmp/aic-quarantine-1","state":"/w/quarantine/1"}\n'), '/tmp/aic-quarantine-1');
+});
+
+// --- testbed mapping (DECISIONS T43) ---------------------------------------
+import { adaptCanary, mapUser, parseMap } from '../run.mjs';
+
+test('parseMap reads key=value pairs and rejects malformed entries', () => {
+  assert.deepEqual(parseMap('a@example.com=alice, b@example.com=bob', '--sender-map'), { 'a@example.com': 'alice', 'b@example.com': 'bob' });
+  assert.deepEqual(parseMap('', '--file-map'), {});
+  assert.throws(() => parseMap('alice', '--sender-map'), /expected key=value/);
+  assert.throws(() => parseMap('a=', '--sender-map'), /expected key=value/);
+});
+
+test('parseArgs accepts the testbed flags and keeps the defaults otherwise', () => {
+  const o = parseArgs(['--mode', 'inbox', '--sender-map', 'a@example.com=alice', '--file-map', 'src/discount.js=internal/order/store.go', '--origin-remote', '/tmp/clone']);
+  assert.deepEqual(o.senderMap, { 'a@example.com': 'alice' });
+  assert.deepEqual(o.fileMap, { 'src/discount.js': 'internal/order/store.go' });
+  assert.equal(o.originRemote, path.resolve('/tmp/clone'));
+  const d = parseArgs(['--mode', 'inbox']);
+  assert.deepEqual(d.senderMap, {});
+  assert.deepEqual(d.fileMap, {});
+  assert.equal(d.originRemote, null);
+  assert.throws(() => parseArgs(['--mode', 'session', '--origin-remote', '/tmp/clone']), /inbox only/);
+});
+
+test('adaptCanary maps senders, context and files; unchanged without maps', () => {
+  const canary = { id: '99', sends: [
+    { from: 'a@example.com', message: { schema: 'finding.v1', context_id: 'local/shop!1', task_id: 'f-1', file: 'src/discount.js' } },
+    { from: 'b@example.com', message: { schema: 'reply.v1', context_id: 'local/shop!1', task_id: 'f-1', kind: 'fixed' } },
+    { from: 'c@example.com', message: { schema: 'finding.v1', context_id: 'local/shop!1', task_id: 'f-2', file: '.gitlab-ci.yml' } },
+  ], expect: {} };
+  const same = adaptCanary(canary, { context: 'local/shop!1' });
+  assert.deepEqual(same, canary);
+  const mapped = adaptCanary(canary, {
+    senderMap: { 'a@example.com': 'alice', 'b@example.com': 'bob' },
+    fileMap: { 'src/discount.js': 'internal/order/store.go' },
+    context: 'parley-lab/orders-service!2',
+  });
+  assert.deepEqual(mapped.sends.map((s) => s.from), ['alice', 'bob', 'c@example.com']);
+  assert.ok(mapped.sends.every((s) => s.message.context_id === 'parley-lab/orders-service!2'));
+  assert.equal(mapped.sends[0].message.file, 'internal/order/store.go');
+  assert.equal(mapped.sends[1].message.file, undefined);
+  assert.equal(mapped.sends[2].message.file, '.gitlab-ci.yml');
+  assert.equal(canary.sends[0].from, 'a@example.com', 'input not mutated');
+  assert.equal(mapUser({ x: 'y' }, 'z'), 'z');
+});
+
+// --- round-cap fill (D45) ---------------------------------------------------
+import { expandFill, parseUntilRound } from '../run.mjs';
+
+test('parseUntilRound reads max_rounds with an optional offset', () => {
+  assert.equal(parseUntilRound('max_rounds', 10), 10);
+  assert.equal(parseUntilRound('max_rounds-1', 10), 9);
+  assert.equal(parseUntilRound('max_rounds+2', 5), 7);
+  assert.throws(() => parseUntilRound('5', 10), /until_round/);
+  assert.throws(() => parseUntilRound('max_rounds', 0), /unknown/);
+});
+
+test('expandFill repeats the alternating sends up to the target round and keeps the tail', () => {
+  const finding = { from: 'a@example.com', message: { schema: 'finding.v1', context_id: 'local/shop!1', task_id: 'f-1' } };
+  const b = { from: 'b@example.com', message: { schema: 'reply.v1', context_id: 'local/shop!1', task_id: 'f-1', kind: 'disputed', note: 'b' } };
+  const a = { from: 'a@example.com', message: { schema: 'reply.v1', context_id: 'local/shop!1', task_id: 'f-1', kind: 'answer', note: 'a' } };
+  const last = { from: 'b@example.com', message: { schema: 'reply.v1', context_id: 'local/shop!1', task_id: 'f-1', kind: 'disputed', note: 'end' } };
+  const c = { id: '12', sends: [finding, { fill: { until_round: 'max_rounds' }, alternate: [b, a] }, last], expect: {} };
+  const e10 = expandFill(c, 10);
+  assert.equal(e10.sends.length, 11, 'finding + 9 fill + last = round 11');
+  assert.deepEqual(e10.sends.slice(1, 4).map((s) => s.from), ['b@example.com', 'a@example.com', 'b@example.com']);
+  assert.equal(e10.sends.at(-1).message.note, 'end');
+  const e5 = expandFill({ ...c, sends: [finding, { fill: { until_round: 'max_rounds-1' }, alternate: [b, a] }, last] }, 5);
+  assert.equal(e5.sends.length, 5, 'finding + 3 fill + last = round 5');
+  assert.deepEqual(expandFill({ id: 'x', sends: [finding, last], expect: {} }, 10).sends.length, 2, 'no fill: unchanged');
+  assert.equal(c.sends.length, 3, 'input not mutated');
+});
+
+test('validateCanary accepts a fill entry and checks its alternates', () => {
+  const ok = JSON.parse(fs.readFileSync(path.join(DIR, '13-last-round-no-conclusion.json'), 'utf8'));
+  assert.deepEqual(validateCanary(ok, '13-last-round-no-conclusion.json'), []);
+  const bad = { ...ok, sends: [ok.sends[0], { fill: { until_round: '7' }, alternate: [] }] };
+  const problems = validateCanary(bad);
+  assert.ok(problems.some((p) => /until_round/.test(p)) && problems.some((p) => /alternate/.test(p)), problems.join('\n'));
 });

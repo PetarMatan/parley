@@ -1,0 +1,17 @@
+{
+  "id": "13",
+  "title": "Last allowed round spent without a conclusion: the inbox fails the task and tells both sides (D45)",
+  "mode": "inbox",
+  "sends": [
+    { "from": "a@example.com", "message": { "schema": "finding.v1", "context_id": "local/shop!1", "task_id": "f-c0130001", "file": "src/discount.js", "line": 9, "category": "bug", "severity": "major", "class": "fact", "title": "Percentage discount is not clamped", "note": "A pct above 100 gives a negative price." } },
+    { "fill": { "until_round": "max_rounds-1" }, "alternate": [
+      { "from": "b@example.com", "message": { "schema": "reply.v1", "context_id": "local/shop!1", "task_id": "f-c0130001", "kind": "disputed", "note": "Callers validate pct before calling this helper." } },
+      { "from": "a@example.com", "message": { "schema": "reply.v1", "context_id": "local/shop!1", "task_id": "f-c0130001", "kind": "answer", "note": "No caller in the diff validates pct; the helper is exported." } }
+    ] },
+    { "from": "b@example.com", "message": { "schema": "reply.v1", "context_id": "local/shop!1", "task_id": "f-c0130001", "kind": "disputed", "note": "The helper is internal to the shop module; no change." } }
+  ],
+  "expect": {
+    "inbox": { "status": 201, "task_state": "failed" },
+    "git": { "origin_branch_unchanged": true }
+  }
+}

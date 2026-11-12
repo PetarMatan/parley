@@ -141,7 +141,7 @@ services:
     environment:
       AIC_WORK: /work
       AIC_INBOX_ADDR: 0.0.0.0:7070
-      AIC_MAX_ROUNDS: ${AIC_MAX_ROUNDS:-5}
+      AIC_MAX_ROUNDS: ${AIC_MAX_ROUNDS:-10}
       AIC_SERVICE_USERS: ${AIC_SERVICE_USERS:-promoter@parleylab.dev}
       # Keycloak realm, audience `parley` (T4). Identity is the username
       # (preferred_username), the same string GitLab shows for merge request

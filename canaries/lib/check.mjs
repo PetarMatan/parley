@@ -43,12 +43,22 @@ export function validateCanary(c, fileName = '') {
   if (!MODES.includes(c.mode)) at(`mode must be one of ${MODES.join(', ')}`);
   if (c.mode === 'session' && !TARGETS.includes(c.target)) at(`session canary needs target ${TARGETS.join(' or ')}`);
   if (!Array.isArray(c.sends) || c.sends.length === 0) at('sends must be a non-empty array');
-  for (const [i, s] of (c.sends ?? []).entries()) {
-    if (!/^[^@\s]+@[^@\s]+$/.test(s.from ?? '')) at(`sends[${i}].from must be an email`);
+  const checkSend = (s, where) => {
+    if (!/^[^@\s]+@[^@\s]+$/.test(s.from ?? '')) at(`${where}.from must be an email`);
     const m = s.message ?? {};
-    if (!['finding.v1', 'reply.v1'].includes(m.schema)) at(`sends[${i}].message.schema must be finding.v1 or reply.v1`);
-    if (!TASK_ID_RE.test(m.task_id ?? '')) at(`sends[${i}].message.task_id must match f-<8 hex>`);
-    if (!m.context_id) at(`sends[${i}].message.context_id missing`);
+    if (!['finding.v1', 'reply.v1'].includes(m.schema)) at(`${where}.message.schema must be finding.v1 or reply.v1`);
+    if (!TASK_ID_RE.test(m.task_id ?? '')) at(`${where}.message.task_id must match f-<8 hex>`);
+    if (!m.context_id) at(`${where}.message.context_id missing`);
+  };
+  for (const [i, s] of (c.sends ?? []).entries()) {
+    if (s.fill) {
+      // A round-cap fill (run.mjs expandFill): alternating sends repeated up to a round relative to max_rounds.
+      if (!/^max_rounds([+-]\d+)?$/.test(String(s.fill.until_round ?? ''))) at(`sends[${i}].fill.until_round must be max_rounds, max_rounds+n or max_rounds-n`);
+      if (!Array.isArray(s.alternate) || s.alternate.length === 0) at(`sends[${i}].alternate must be a non-empty array`);
+      for (const [j, a] of (s.alternate ?? []).entries()) checkSend(a, `sends[${i}].alternate[${j}]`);
+      continue;
+    }
+    checkSend(s, `sends[${i}]`);
   }
   if (!c.expect?.inbox) at('expect.inbox missing');
   for (const r of c.expect?.guard?.must_block_rules ?? []) {
