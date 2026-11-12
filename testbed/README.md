@@ -130,7 +130,7 @@ Cloning over HTTPS needs a GitLab personal access token per person as the passwo
 
 ## Second laptop
 
-The second person needs Node 22, git, Claude Code signed in to the organization, and GitHub read access to this repository while it is the marketplace. You send them, over a private channel:
+The second person needs Node 22, git, Claude Code signed in to any Claude account whose organization or plan has Channels switched on (D29: the development flag skips only the allow list; with Channels off, events are dropped silently), and GitHub read access to this repository while it is the marketplace. Parley itself never sees the Claude account: the person is who Keycloak says. You send them, over a private channel:
 
 - the login line: `/parley:login https://channel.parleylab.dev https://auth.parleylab.dev/realms/parley parley-cli preferred_username`
 - their user name and Keycloak password (`deploy/cloud/seed/users.env`)
